@@ -18,9 +18,14 @@ const port = Number(process.env.PORT) || 8080;
 
 const app = Fastify({ logger });
 
+// Busy state tracking — reflects whether the agent is currently processing
+let busy = false;
+export function setBusy() { busy = true; }
+export function setIdle() { busy = false; }
+
 // AgentCore health check — must never block, respond in < 100ms
 app.get('/ping', async () => {
-  return { status: 'Healthy' };
+  return { status: busy ? 'HealthyBusy' : 'Healthy' };
 });
 
 // Agent execution endpoint

@@ -18,7 +18,7 @@
  *   - Session resumption via sessionId
  */
 
-import fs from 'fs';
+import fs, { rmSync, mkdirSync } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { query, type HookCallback, type PreCompactHookInput } from '@anthropic-ai/claude-agent-sdk';
@@ -28,8 +28,19 @@ import type { InvocationPayload, InvocationResult } from '@clawbot/shared';
 import { syncFromS3, syncToS3, type SyncPaths } from './session.js';
 import { loadMemoryLayers } from './memory.js';
 import { getScopedClients } from './scoped-credentials.js';
+import { setBusy, setIdle } from './server.js';
 
 const SESSION_BUCKET = process.env.SESSION_BUCKET || '';
+
+// Session switch detection — track which bot+group we last served
+let currentSessionKey: string | undefined;
+
+async function cleanLocalWorkspace(): Promise<void> {
+  for (const dir of ['/workspace/group', '/workspace/global', '/workspace/shared', '/home/node/.claude']) {
+    try { rmSync(dir, { recursive: true, force: true }); } catch { /* ignore */ }
+    try { mkdirSync(dir, { recursive: true }); } catch { /* ignore */ }
+  }
+}
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // ---------------------------------------------------------------------------
@@ -40,7 +51,30 @@ export async function handleInvocation(
   payload: InvocationPayload,
   logger: pino.Logger,
 ): Promise<InvocationResult> {
+  setBusy();
+  try {
+    return await _handleInvocation(payload, logger);
+  } finally {
+    setIdle();
+  }
+}
+
+async function _handleInvocation(
+  payload: InvocationPayload,
+  logger: pino.Logger,
+): Promise<InvocationResult> {
   const { botId, botName, groupJid, userId, prompt, sessionPath, memoryPaths } = payload;
+
+  // Session switch detection — clean workspace if serving a different bot/group
+  const sessionKey = `${botId}#${groupJid}`;
+  if (currentSessionKey && currentSessionKey !== sessionKey) {
+    logger.info(
+      { previousSession: currentSessionKey, newSession: sessionKey },
+      'Session switch detected, cleaning local workspace',
+    );
+    await cleanLocalWorkspace();
+  }
+  currentSessionKey = sessionKey;
 
   // 1. Get scoped credentials (STS ABAC — userId + botId tags)
   logger.info({ botId, userId }, 'Acquiring scoped credentials');
@@ -234,7 +268,15 @@ async function runAgentQuery(params: QueryParams): Promise<InvocationResult> {
         logger.info({ sessionId: newSessionId }, 'Session initialized');
       }
 
-      // Track token usage from result messages
+      // Track token usage from assistant messages
+      if (message.type === 'assistant') {
+        const usage = (message as { message?: { usage?: { input_tokens?: number; output_tokens?: number } } }).message?.usage;
+        if (usage) {
+          tokensUsed += (usage.input_tokens || 0) + (usage.output_tokens || 0);
+        }
+      }
+
+      // Track result messages
       if (message.type === 'result') {
         resultCount++;
         const textResult = 'result' in message ? (message as { result?: string }).result : null;
@@ -242,7 +284,7 @@ async function runAgentQuery(params: QueryParams): Promise<InvocationResult> {
           lastResult = textResult;
         }
         logger.info(
-          { resultCount, resultLength: textResult?.length },
+          { resultCount, resultLength: textResult?.length, tokensUsed },
           'Agent result received',
         );
       }
