@@ -17,6 +17,8 @@ declare module 'fastify' {
   interface FastifyRequest {
     userId: string;
     userEmail: string;
+    /** Raw request body string, stored before JSON parsing for webhook signature verification */
+    rawBody?: string;
   }
 }
 

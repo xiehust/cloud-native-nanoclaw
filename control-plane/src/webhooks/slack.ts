@@ -4,7 +4,7 @@
 import type { FastifyPluginAsync } from 'fastify';
 import { SQSClient, SendMessageCommand } from '@aws-sdk/client-sqs';
 import { config } from '../config.js';
-import { getChannelsByBot, putMessage, getOrCreateGroup } from '../services/dynamo.js';
+import { getChannelsByBot, putMessage, getOrCreateGroup, listGroups, getUser } from '../services/dynamo.js';
 import { getCachedBot, getChannelCredentials } from '../services/cached-lookups.js';
 import { verifySlackSignature } from './signature.js';
 import type { Attachment, Message, SqsInboundPayload } from '@clawbot/shared';
@@ -82,6 +82,21 @@ function slackTsToIso(ts: string): string {
 }
 
 export const slackWebhook: FastifyPluginAsync = async (app) => {
+  // Register raw body parser for signature verification
+  app.addContentTypeParser(
+    'application/json',
+    { parseAs: 'string' },
+    (req, body, done) => {
+      // Store raw body for signature verification before parsing
+      req.rawBody = body as string;
+      try {
+        done(null, JSON.parse(body as string));
+      } catch (err) {
+        done(err as Error, undefined);
+      }
+    },
+  );
+
   app.post<{ Params: { botId: string } }>(
     '/:botId',
     async (request, reply) => {
@@ -137,10 +152,7 @@ export const slackWebhook: FastifyPluginAsync = async (app) => {
 
         // Verify Slack signature
         if (creds.signingSecret) {
-          const rawBody =
-            typeof request.body === 'string'
-              ? request.body
-              : JSON.stringify(request.body);
+          const rawBody = request.rawBody ?? JSON.stringify(request.body);
           const headers = request.headers as Record<
             string,
             string | undefined
@@ -195,10 +207,22 @@ export const slackWebhook: FastifyPluginAsync = async (app) => {
           }
         }
 
-        // 7. Ensure group exists
+        // 7. Check group quota before auto-creating
+        const existingGroups = await listGroups(botId);
+        const isNewGroup = !existingGroups.find(g => g.groupJid === groupJid);
+        if (isNewGroup) {
+          const owner = await getUser(bot.userId);
+          const maxGroups = owner?.quota?.maxGroupsPerBot ?? 10;
+          if (existingGroups.length >= maxGroups) {
+            logger.warn({ botId, maxGroups }, 'Group limit reached, skipping message');
+            return reply.status(200).send({ ok: true });
+          }
+        }
+
+        // 8. Ensure group exists
         await getOrCreateGroup(botId, groupJid, chatName, 'slack', isGroup);
 
-        // 8. Store message
+        // 9. Store message
         const timestamp = slackTsToIso(event.ts);
         const msg: Message = {
           botId,
@@ -216,7 +240,7 @@ export const slackWebhook: FastifyPluginAsync = async (app) => {
         };
         await putMessage(msg);
 
-        // 9. Check trigger
+        // 10. Check trigger
         if (
           !shouldTrigger(
             content,
@@ -228,7 +252,7 @@ export const slackWebhook: FastifyPluginAsync = async (app) => {
           return reply.status(200).send({ ok: true });
         }
 
-        // 10. Dispatch to SQS
+        // 11. Dispatch to SQS
         const sqsPayload: SqsInboundPayload = {
           type: 'inbound_message',
           botId,

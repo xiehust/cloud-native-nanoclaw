@@ -4,7 +4,7 @@
 import type { FastifyPluginAsync } from 'fastify';
 import { SQSClient, SendMessageCommand } from '@aws-sdk/client-sqs';
 import { config } from '../config.js';
-import { getChannelsByBot, putMessage, getOrCreateGroup } from '../services/dynamo.js';
+import { getChannelsByBot, putMessage, getOrCreateGroup, listGroups, getUser } from '../services/dynamo.js';
 import { getCachedBot, getChannelCredentials } from '../services/cached-lookups.js';
 import { verifyWhatsAppSignature } from './signature.js';
 import type { Message, SqsInboundPayload } from '@clawbot/shared';
@@ -55,7 +55,9 @@ export const whatsappWebhook: FastifyPluginAsync = async (app) => {
   app.addContentTypeParser(
     'application/json',
     { parseAs: 'string' },
-    (_req, body, done) => {
+    (req, body, done) => {
+      // Store raw body for signature verification before parsing
+      req.rawBody = body as string;
       try {
         done(null, JSON.parse(body as string));
       } catch (err) {
@@ -75,9 +77,26 @@ export const whatsappWebhook: FastifyPluginAsync = async (app) => {
   }>(
     '/:botId',
     async (request, reply) => {
+      const { botId } = request.params;
       const query = request.query;
       if (query['hub.mode'] === 'subscribe') {
-        request.log.info({ botId: request.params.botId }, 'WhatsApp webhook verification challenge');
+        // Validate hub.verify_token against stored credentials
+        const channels = await getChannelsByBot(botId);
+        const whatsappChannel = channels.find(
+          (ch) => ch.channelType === 'whatsapp',
+        );
+        if (!whatsappChannel) {
+          request.log.warn({ botId }, 'No WhatsApp channel configured for bot');
+          return reply.status(403).send('Forbidden');
+        }
+
+        const creds = await getChannelCredentials(whatsappChannel.credentialSecretArn);
+        if (!creds.verifyToken || query['hub.verify_token'] !== creds.verifyToken) {
+          request.log.warn({ botId }, 'WhatsApp verify_token mismatch');
+          return reply.status(403).send('Forbidden');
+        }
+
+        request.log.info({ botId }, 'WhatsApp webhook verification challenge accepted');
         return reply.status(200).send(query['hub.challenge'] || '');
       }
       return reply.status(403).send('Forbidden');
@@ -114,10 +133,7 @@ export const whatsappWebhook: FastifyPluginAsync = async (app) => {
 
         // 3. Verify HMAC-SHA256 signature
         if (creds.appSecret) {
-          const rawBody =
-            typeof request.body === 'string'
-              ? request.body
-              : JSON.stringify(request.body);
+          const rawBody = request.rawBody ?? JSON.stringify(request.body);
           const signature = (request.headers as Record<string, string | undefined>)[
             'x-hub-signature-256'
           ];
@@ -165,10 +181,22 @@ export const whatsappWebhook: FastifyPluginAsync = async (app) => {
               const isGroup = false;
               const chatName = `wa-${senderName}`;
 
-              // 5. Ensure group exists in DynamoDB
+              // 5. Check group quota before auto-creating
+              const existingGroups = await listGroups(botId);
+              const isNewGroup = !existingGroups.find(g => g.groupJid === groupJid);
+              if (isNewGroup) {
+                const owner = await getUser(bot.userId);
+                const maxGroups = owner?.quota?.maxGroupsPerBot ?? 10;
+                if (existingGroups.length >= maxGroups) {
+                  logger.warn({ botId, maxGroups }, 'Group limit reached, skipping message');
+                  continue;
+                }
+              }
+
+              // 6. Ensure group exists in DynamoDB
               await getOrCreateGroup(botId, groupJid, chatName, 'whatsapp', isGroup);
 
-              // 6. Store message in DynamoDB
+              // 7. Store message in DynamoDB
               const timestamp = new Date(
                 Number(waMessage.timestamp) * 1000,
               ).toISOString();
@@ -187,13 +215,13 @@ export const whatsappWebhook: FastifyPluginAsync = async (app) => {
               };
               await putMessage(msg);
 
-              // 7. Check trigger — WhatsApp messages are always 1:1, so always trigger
+              // 8. Check trigger — WhatsApp messages are always 1:1, so always trigger
               if (!shouldTrigger(text, bot.triggerPattern)) {
                 logger.debug({ botId, groupJid }, 'Message did not match trigger');
                 continue;
               }
 
-              // 8. Send to SQS FIFO for agent dispatch
+              // 9. Send to SQS FIFO for agent dispatch
               const sqsPayload: SqsInboundPayload = {
                 type: 'inbound_message',
                 botId,

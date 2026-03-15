@@ -4,7 +4,7 @@
 import type { FastifyPluginAsync } from 'fastify';
 import { SQSClient, SendMessageCommand } from '@aws-sdk/client-sqs';
 import { config } from '../config.js';
-import { getChannelsByBot, putMessage, getOrCreateGroup } from '../services/dynamo.js';
+import { getChannelsByBot, putMessage, getOrCreateGroup, listGroups, getUser } from '../services/dynamo.js';
 import { getCachedBot, getChannelCredentials } from '../services/cached-lookups.js';
 import { verifyTelegramSignature } from './signature.js';
 import type { Attachment, Message, SqsInboundPayload } from '@clawbot/shared';
@@ -99,7 +99,9 @@ export const telegramWebhook: FastifyPluginAsync = async (app) => {
   app.addContentTypeParser(
     'application/json',
     { parseAs: 'string' },
-    (_req, body, done) => {
+    (req, body, done) => {
+      // Store raw body for signature verification before parsing
+      req.rawBody = body as string;
       try {
         done(null, JSON.parse(body as string));
       } catch (err) {
@@ -140,10 +142,7 @@ export const telegramWebhook: FastifyPluginAsync = async (app) => {
         const creds = await getChannelCredentials(telegramChannel.credentialSecretArn);
 
         // 3. Verify signature header
-        const rawBody =
-          typeof request.body === 'string'
-            ? request.body
-            : JSON.stringify(request.body);
+        const rawBody = request.rawBody ?? JSON.stringify(request.body);
         const headers = request.headers as Record<string, string | undefined>;
         if (
           creds.webhookSecret &&
@@ -217,10 +216,22 @@ export const telegramWebhook: FastifyPluginAsync = async (app) => {
           }
         }
 
-        // 6. Ensure group exists in DynamoDB
+        // 6. Check group quota before auto-creating
+        const existingGroups = await listGroups(botId);
+        const isNewGroup = !existingGroups.find(g => g.groupJid === groupJid);
+        if (isNewGroup) {
+          const owner = await getUser(bot.userId);
+          const maxGroups = owner?.quota?.maxGroupsPerBot ?? 10;
+          if (existingGroups.length >= maxGroups) {
+            logger.warn({ botId, maxGroups }, 'Group limit reached, skipping message');
+            return reply.status(200).send({ ok: true });
+          }
+        }
+
+        // 7. Ensure group exists in DynamoDB
         await getOrCreateGroup(botId, groupJid, chatName, 'telegram', isGroup);
 
-        // 7. Store message in DynamoDB
+        // 8. Store message in DynamoDB
         const timestamp = new Date(tgMessage.date * 1000).toISOString();
         const msg: Message = {
           botId,
@@ -238,13 +249,13 @@ export const telegramWebhook: FastifyPluginAsync = async (app) => {
         };
         await putMessage(msg);
 
-        // 8. Check trigger
+        // 9. Check trigger
         if (!shouldTrigger(content, tgMessage.chat, bot.triggerPattern)) {
           logger.debug({ botId, groupJid }, 'Message did not match trigger');
           return reply.status(200).send({ ok: true });
         }
 
-        // 9. Send to SQS FIFO for agent dispatch
+        // 10. Send to SQS FIFO for agent dispatch
         const sqsPayload: SqsInboundPayload = {
           type: 'inbound_message',
           botId,
