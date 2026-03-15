@@ -159,12 +159,18 @@ export class ControlPlaneStack extends cdk.Stack {
     // S3 read/write on data bucket
     dataBucket.grantReadWrite(taskRole);
 
-    // Secrets Manager GetSecretValue
+    // Secrets Manager — CRUD for channel credentials
     taskRole.addToPrincipalPolicy(
       new iam.PolicyStatement({
-        sid: 'SecretsManagerRead',
+        sid: 'SecretsManagerAccess',
         effect: iam.Effect.ALLOW,
-        actions: ['secretsmanager:GetSecretValue'],
+        actions: [
+          'secretsmanager:CreateSecret',
+          'secretsmanager:GetSecretValue',
+          'secretsmanager:PutSecretValue',
+          'secretsmanager:DeleteSecret',
+          'secretsmanager:UpdateSecret',
+        ],
         resources: [`arn:aws:secretsmanager:${this.region}:${this.account}:secret:clawbot/${stage}/*`],
       }),
     );
