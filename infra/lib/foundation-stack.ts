@@ -134,6 +134,13 @@ export class FoundationStack extends cdk.Stack {
       sortKey: { name: 'channelKey', type: dynamodb.AttributeType.STRING },
     });
 
+    this.channelsTable.addGlobalSecondaryIndex({
+      indexName: 'healthCheckIndex',
+      partitionKey: { name: 'healthStatus', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'lastHealthCheck', type: dynamodb.AttributeType.STRING },
+      projectionType: dynamodb.ProjectionType.ALL,
+    });
+
     // 4. Groups table
     this.groupsTable = new dynamodb.Table(this, 'GroupsTable', {
       ...tableDefaults,

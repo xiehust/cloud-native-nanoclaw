@@ -9,6 +9,7 @@ import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as sqs from 'aws-cdk-lib/aws-sqs';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as cognito from 'aws-cdk-lib/aws-cognito';
+import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
 import * as wafv2 from 'aws-cdk-lib/aws-wafv2';
 import type { Construct } from 'constructs';
 
@@ -32,6 +33,8 @@ export interface ControlPlaneStackProps extends cdk.StackProps {
   userPool: cognito.IUserPool;
   userPoolClient: cognito.IUserPoolClient;
   agentBaseRole: iam.IRole;
+  schedulerRoleArn: string;
+  messageQueueArn: string;
 }
 
 export class ControlPlaneStack extends cdk.Stack {
@@ -128,6 +131,9 @@ export class ControlPlaneStack extends cdk.Stack {
         DATA_BUCKET: dataBucket.bucketName,
         COGNITO_USER_POOL_ID: userPool.userPoolId,
         COGNITO_CLIENT_ID: userPoolClient.userPoolClientId,
+        SCHEDULER_ROLE_ARN: props.schedulerRoleArn,
+        MESSAGE_QUEUE_ARN: props.messageQueueArn,
+        WEBHOOK_BASE_URL: `https://${this.alb.loadBalancerDnsName}`,
       },
       logging: ecs.LogDrivers.awsLogs({
         logGroup,
@@ -194,6 +200,45 @@ export class ControlPlaneStack extends cdk.Stack {
       assignPublicIp: false,
       vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
       securityGroups: [fargateSg],
+    });
+
+    // ── ECS Auto-Scaling ───────────────────────────────────────────────
+    const scaling = this.service.autoScaleTaskCount({
+      minCapacity: 2,
+      maxCapacity: 10,
+    });
+
+    const queueMessagesVisible = new cloudwatch.Metric({
+      namespace: 'AWS/SQS',
+      metricName: 'ApproximateNumberOfMessagesVisible',
+      dimensionsMap: {
+        QueueName: messageQueue.queueName,
+      },
+      statistic: 'Average',
+      period: cdk.Duration.minutes(1),
+    });
+
+    // Scale up: +1 at 50 messages, +2 at 200 messages
+    scaling.scaleOnMetric('ScaleUp', {
+      metric: queueMessagesVisible,
+      scalingSteps: [
+        { upper: 50, change: 0 },
+        { lower: 50, change: +1 },
+        { lower: 200, change: +2 },
+      ],
+      adjustmentType: cdk.aws_applicationautoscaling.AdjustmentType.CHANGE_IN_CAPACITY,
+      cooldown: cdk.Duration.minutes(3),
+    });
+
+    // Scale down: -1 when 0 messages
+    scaling.scaleOnMetric('ScaleDown', {
+      metric: queueMessagesVisible,
+      scalingSteps: [
+        { upper: 0, change: 0 },
+        { lower: 0, change: -1 },
+      ],
+      adjustmentType: cdk.aws_applicationautoscaling.AdjustmentType.CHANGE_IN_CAPACITY,
+      cooldown: cdk.Duration.minutes(30),
     });
 
     // ── ALB Target Group & Listener ─────────────────────────────────────

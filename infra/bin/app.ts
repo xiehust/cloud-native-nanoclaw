@@ -66,6 +66,8 @@ const controlPlane = new ControlPlaneStack(app, `ClawBot-${stage}-ControlPlane`,
   userPool: auth.userPool,
   userPoolClient: auth.userPoolClient,
   agentBaseRole: agent.agentBaseRole,
+  schedulerRoleArn: agent.schedulerRole.roleArn,
+  messageQueueArn: foundation.messageQueue.queueArn,
 });
 controlPlane.addDependency(foundation);
 controlPlane.addDependency(auth);
