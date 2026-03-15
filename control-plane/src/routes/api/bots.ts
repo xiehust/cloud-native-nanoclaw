@@ -1,0 +1,104 @@
+// ClawBot Cloud — Bots API Routes
+// CRUD operations for bot management
+
+import type { FastifyPluginAsync } from 'fastify';
+import { z } from 'zod';
+import { ulid } from 'ulid';
+import {
+  createBot,
+  getBot,
+  listBots,
+  updateBot,
+  deleteBot,
+} from '../../services/dynamo.js';
+import type { Bot, CreateBotRequest, UpdateBotRequest } from '@clawbot/shared';
+
+const createBotSchema = z.object({
+  name: z.string().min(1).max(100),
+  description: z.string().max(500).optional(),
+  systemPrompt: z.string().max(10000).optional(),
+  triggerPattern: z.string().max(200).optional(),
+});
+
+const updateBotSchema = z.object({
+  name: z.string().min(1).max(100).optional(),
+  description: z.string().max(500).optional(),
+  systemPrompt: z.string().max(10000).optional(),
+  triggerPattern: z.string().max(200).optional(),
+  status: z.enum(['active', 'paused']).optional(),
+});
+
+export const botsRoutes: FastifyPluginAsync = async (app) => {
+  // List all bots for the authenticated user
+  app.get('/', async (request) => {
+    const bots = await listBots(request.userId);
+    // Filter out soft-deleted bots
+    return bots.filter((b) => b.status !== 'deleted');
+  });
+
+  // Create a new bot
+  app.post('/', async (request, reply) => {
+    const body = createBotSchema.parse(request.body as CreateBotRequest);
+    const now = new Date().toISOString();
+
+    const bot: Bot = {
+      userId: request.userId,
+      botId: ulid(),
+      name: body.name,
+      description: body.description,
+      systemPrompt: body.systemPrompt,
+      triggerPattern: body.triggerPattern || `@${body.name}`,
+      status: 'active',
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    await createBot(bot);
+    return reply.status(201).send(bot);
+  });
+
+  // Get a specific bot
+  app.get<{ Params: { botId: string } }>('/:botId', async (request, reply) => {
+    const { botId } = request.params;
+    const bot = await getBot(request.userId, botId);
+    if (!bot || bot.status === 'deleted') {
+      return reply.status(404).send({ error: 'Bot not found' });
+    }
+    return bot;
+  });
+
+  // Update a bot
+  app.put<{ Params: { botId: string } }>(
+    '/:botId',
+    async (request, reply) => {
+      const { botId } = request.params;
+      const updates = updateBotSchema.parse(request.body as UpdateBotRequest);
+
+      // Verify bot exists and belongs to user
+      const existing = await getBot(request.userId, botId);
+      if (!existing || existing.status === 'deleted') {
+        return reply.status(404).send({ error: 'Bot not found' });
+      }
+
+      await updateBot(request.userId, botId, updates);
+      const updated = await getBot(request.userId, botId);
+      return updated;
+    },
+  );
+
+  // Delete a bot (soft delete)
+  app.delete<{ Params: { botId: string } }>(
+    '/:botId',
+    async (request, reply) => {
+      const { botId } = request.params;
+
+      const existing = await getBot(request.userId, botId);
+      if (!existing || existing.status === 'deleted') {
+        return reply.status(404).send({ error: 'Bot not found' });
+      }
+
+      await deleteBot(request.userId, botId);
+      return reply.status(204).send();
+    },
+  );
+};

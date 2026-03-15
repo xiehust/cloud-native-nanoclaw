@@ -1,0 +1,10 @@
+node_modules/
+dist/
+cdk.out/
+.env
+*.js
+*.d.ts
+*.js.map
+!jest.config.js
+!vite.config.ts
+.worktrees/

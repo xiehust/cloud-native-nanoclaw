@@ -1,0 +1,19 @@
+{
+  "name": "@clawbot/infra",
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "synth": "cdk synth",
+    "deploy": "cdk deploy --all",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "aws-cdk-lib": "^2.170.0",
+    "constructs": "^10.4.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0",
+    "aws-cdk": "^2.170.0"
+  }
+}
