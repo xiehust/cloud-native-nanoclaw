@@ -9,6 +9,7 @@ import { botsRoutes } from './bots.js';
 import { channelsRoutes } from './channels.js';
 import { groupsRoutes } from './groups.js';
 import { tasksRoutes } from './tasks.js';
+import { memoryRoutes } from './memory.js';
 
 // Extend Fastify request to include authenticated user info
 declare module 'fastify' {
@@ -74,4 +75,5 @@ export const apiRoutes: FastifyPluginAsync = async (app) => {
   await app.register(channelsRoutes, { prefix: '/bots/:botId/channels' });
   await app.register(groupsRoutes, { prefix: '/bots/:botId/groups' });
   await app.register(tasksRoutes, { prefix: '/bots/:botId/tasks' });
+  await app.register(memoryRoutes);
 };

@@ -121,3 +121,17 @@ export const tasks = {
   update: (botId: string, taskId: string, data: UpdateTaskRequest) => request<ScheduledTask>(`/bots/${botId}/tasks/${taskId}`, { method: 'PUT', body: JSON.stringify(data) }),
   delete: (botId: string, taskId: string) => request<void>(`/bots/${botId}/tasks/${taskId}`, { method: 'DELETE' }),
 };
+
+// Memory API (CLAUDE.md files)
+export interface MemoryResponse {
+  content: string;
+}
+
+export const memory = {
+  getShared: () => request<MemoryResponse>('/shared-memory'),
+  updateShared: (content: string) => request<MemoryResponse>('/shared-memory', { method: 'PUT', body: JSON.stringify({ content }) }),
+  getBotGlobal: (botId: string) => request<MemoryResponse>(`/bots/${botId}/memory`),
+  updateBotGlobal: (botId: string, content: string) => request<MemoryResponse>(`/bots/${botId}/memory`, { method: 'PUT', body: JSON.stringify({ content }) }),
+  getGroup: (botId: string, gid: string) => request<MemoryResponse>(`/bots/${botId}/groups/${gid}/memory`),
+  updateGroup: (botId: string, gid: string, content: string) => request<MemoryResponse>(`/bots/${botId}/groups/${gid}/memory`, { method: 'PUT', body: JSON.stringify({ content }) }),
+};
