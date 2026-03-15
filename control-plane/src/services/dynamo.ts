@@ -62,23 +62,91 @@ export async function updateUserUsage(
 ): Promise<void> {
   userIdSchema.parse(userId);
   const currentMonth = new Date().toISOString().slice(0, 7); // YYYY-MM
+  // Try normal update with month check — counters accumulate within the same month
+  try {
+    await client.send(
+      new UpdateCommand({
+        TableName: config.tables.users,
+        Key: { userId },
+        UpdateExpression:
+          'SET usageTokens = if_not_exists(usageTokens, :zero) + :tokens, usageInvocations = if_not_exists(usageInvocations, :zero) + :one, usageMonth = :month',
+        ConditionExpression:
+          'attribute_not_exists(usageMonth) OR usageMonth = :month',
+        ExpressionAttributeValues: {
+          ':tokens': tokensUsed,
+          ':one': 1,
+          ':zero': 0,
+          ':month': currentMonth,
+        },
+      }),
+    );
+  } catch (err: unknown) {
+    if (
+      err instanceof Error &&
+      err.name === 'ConditionalCheckFailedException'
+    ) {
+      // Month changed — reset counters to this invocation's values
+      await client.send(
+        new UpdateCommand({
+          TableName: config.tables.users,
+          Key: { userId },
+          UpdateExpression:
+            'SET usageTokens = :tokens, usageInvocations = :one, usageMonth = :month',
+          ExpressionAttributeValues: {
+            ':tokens': tokensUsed,
+            ':one': 1,
+            ':month': currentMonth,
+          },
+        }),
+      );
+    } else {
+      throw err;
+    }
+  }
+}
+
+export async function checkAndAcquireAgentSlot(
+  userId: string,
+  maxConcurrentAgents: number,
+): Promise<boolean> {
+  userIdSchema.parse(userId);
+  try {
+    await client.send(
+      new UpdateCommand({
+        TableName: config.tables.users,
+        Key: { userId },
+        UpdateExpression:
+          'SET activeAgents = if_not_exists(activeAgents, :zero) + :one',
+        ConditionExpression:
+          'attribute_not_exists(activeAgents) OR activeAgents < :max',
+        ExpressionAttributeValues: {
+          ':zero': 0,
+          ':one': 1,
+          ':max': maxConcurrentAgents,
+        },
+      }),
+    );
+    return true;
+  } catch (err: unknown) {
+    if (
+      err instanceof Error &&
+      err.name === 'ConditionalCheckFailedException'
+    ) {
+      return false;
+    }
+    throw err;
+  }
+}
+
+export async function releaseAgentSlot(userId: string): Promise<void> {
+  userIdSchema.parse(userId);
   await client.send(
     new UpdateCommand({
       TableName: config.tables.users,
       Key: { userId },
-      UpdateExpression: `
-        SET usageTokens = if_not_exists(usageTokens, :zero) + :tokens,
-            usageInvocations = if_not_exists(usageInvocations, :zero) + :one,
-            usageMonth = :month,
-            lastLogin = :now
-      `,
-      ExpressionAttributeValues: {
-        ':tokens': tokensUsed,
-        ':one': 1,
-        ':zero': 0,
-        ':month': currentMonth,
-        ':now': new Date().toISOString(),
-      },
+      UpdateExpression:
+        'SET activeAgents = if_not_exists(activeAgents, :one) - :one',
+      ExpressionAttributeValues: { ':one': 1 },
     }),
   );
 }

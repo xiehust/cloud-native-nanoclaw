@@ -17,11 +17,14 @@ import { config } from '../config.js';
 import {
   getGroup,
   getRecentMessages,
+  getUser,
   putMessage,
   putSession,
   getTask,
   getChannelsByBot,
   updateUserUsage,
+  checkAndAcquireAgentSlot,
+  releaseAgentSlot,
 } from '../services/dynamo.js';
 import { getCachedBot, getChannelCredentials } from '../services/cached-lookups.js';
 import { sendChannelMessage } from '../channels/index.js';
@@ -59,112 +62,145 @@ async function dispatchMessage(
     return;
   }
 
-  // 2. Query recent messages (last 50, filter out bot messages for context)
-  const messages = await getRecentMessages(
-    payload.botId,
-    payload.groupJid,
-    50,
-  );
-  const contextMessages = messages.filter((m) => !m.isBotMessage);
+  // 2. Quota checks — load user and verify limits before proceeding
+  const user = await getUser(payload.userId);
+  if (user && user.usageTokens >= user.quota.maxMonthlyTokens) {
+    logger.warn(
+      { userId: payload.userId, usageTokens: user.usageTokens, maxMonthlyTokens: user.quota.maxMonthlyTokens },
+      'User monthly token quota exceeded, dropping message',
+    );
+    // Send quota-exceeded notice to channel
+    await sendChannelReply(
+      payload.botId,
+      payload.groupJid,
+      payload.channelType,
+      'Monthly usage quota exceeded. Please upgrade your plan or wait until next month.',
+      logger,
+    );
+    return;
+  }
 
-  // 3. Format into XML (preserving NanoClaw's format exactly)
-  const prompt = formatMessages(
-    contextMessages.map((m) => ({
-      senderName: m.senderName,
-      content: m.content,
-      timestamp: m.timestamp,
-    })),
-    'UTC', // TODO: get timezone from bot/user config
-  );
+  // 3. Acquire concurrency slot (atomic DynamoDB increment)
+  const maxAgents = user?.quota.maxConcurrentAgents ?? 1;
+  const slotAcquired = await checkAndAcquireAgentSlot(payload.userId, maxAgents);
+  if (!slotAcquired) {
+    // Don't delete the SQS message — let it retry after visibility timeout
+    throw new Error('Concurrent agent limit reached, will retry');
+  }
 
-  // 4. Build invocation payload
-  const invocationPayload: InvocationPayload = {
-    botId: payload.botId,
-    botName: bot.name,
-    groupJid: payload.groupJid,
-    userId: payload.userId,
-    channelType: payload.channelType,
-    prompt,
-    systemPrompt: bot.systemPrompt,
-    sessionPath: `${payload.userId}/${payload.botId}/sessions/${payload.groupJid}/`,
-    memoryPaths: {
-      shared: `${payload.userId}/shared/CLAUDE.md`,
-      botGlobal: `${payload.userId}/${payload.botId}/memory/global/CLAUDE.md`,
-      group: `${payload.userId}/${payload.botId}/memory/${payload.groupJid}/CLAUDE.md`,
-    },
-  };
+  try {
+    // 4. Query recent messages (last 50, filter out bot messages for context)
+    const messages = await getRecentMessages(
+      payload.botId,
+      payload.groupJid,
+      50,
+    );
+    const contextMessages = messages.filter((m) => !m.isBotMessage);
 
-  logger.info(
-    { botId: payload.botId, groupJid: payload.groupJid },
-    'Invoking agent',
-  );
+    // 5. Format into XML (preserving NanoClaw's format exactly)
+    const prompt = formatMessages(
+      contextMessages.map((m) => ({
+        senderName: m.senderName,
+        content: m.content,
+        timestamp: m.timestamp,
+      })),
+      'UTC', // TODO: get timezone from bot/user config
+    );
 
-  // 5. Invoke AgentCore
-  const result = await invokeAgent(invocationPayload, logger);
+    // 6. Build invocation payload
+    const invocationPayload: InvocationPayload = {
+      botId: payload.botId,
+      botName: bot.name,
+      groupJid: payload.groupJid,
+      userId: payload.userId,
+      channelType: payload.channelType,
+      prompt,
+      systemPrompt: bot.systemPrompt,
+      sessionPath: `${payload.userId}/${payload.botId}/sessions/${payload.groupJid}/`,
+      memoryPaths: {
+        shared: `${payload.userId}/shared/CLAUDE.md`,
+        botGlobal: `${payload.userId}/${payload.botId}/memory/global/CLAUDE.md`,
+        group: `${payload.userId}/${payload.botId}/memory/${payload.groupJid}/CLAUDE.md`,
+      },
+    };
 
-  // 6. Store bot reply in DynamoDB
-  if (result.status === 'success' && result.result) {
-    const replyText = formatOutbound(result.result);
-    if (replyText) {
-      await putMessage({
-        botId: payload.botId,
-        groupJid: payload.groupJid,
-        timestamp: new Date().toISOString(),
-        messageId: `bot-${Date.now()}`,
-        sender: bot.name,
-        senderName: bot.name,
-        content: replyText,
-        isFromMe: true,
-        isBotMessage: true,
-        channelType: payload.channelType,
-        ttl: Math.floor(Date.now() / 1000) + 90 * 24 * 3600,
-      });
+    logger.info(
+      { botId: payload.botId, groupJid: payload.groupJid },
+      'Invoking agent',
+    );
 
-      // 7. Send reply via channel API
-      await sendChannelReply(
-        payload.botId,
-        payload.groupJid,
-        payload.channelType,
-        replyText,
-        logger,
+    // 7. Invoke AgentCore
+    const result = await invokeAgent(invocationPayload, logger);
+
+    // 8. Store bot reply in DynamoDB
+    if (result.status === 'success' && result.result) {
+      const replyText = formatOutbound(result.result);
+      if (replyText) {
+        await putMessage({
+          botId: payload.botId,
+          groupJid: payload.groupJid,
+          timestamp: new Date().toISOString(),
+          messageId: `bot-${Date.now()}`,
+          sender: bot.name,
+          senderName: bot.name,
+          content: replyText,
+          isFromMe: true,
+          isBotMessage: true,
+          channelType: payload.channelType,
+          ttl: Math.floor(Date.now() / 1000) + 90 * 24 * 3600,
+        });
+
+        // 9. Send reply via channel API
+        await sendChannelReply(
+          payload.botId,
+          payload.groupJid,
+          payload.channelType,
+          replyText,
+          logger,
+        );
+      }
+    } else if (result.status === 'error') {
+      logger.error(
+        { botId: payload.botId, error: result.error },
+        'Agent invocation failed',
       );
     }
-  } else if (result.status === 'error') {
-    logger.error(
-      { botId: payload.botId, error: result.error },
-      'Agent invocation failed',
+
+    // 10. Update session
+    if (result.newSessionId) {
+      await putSession({
+        botId: payload.botId,
+        groupJid: payload.groupJid,
+        agentcoreSessionId: result.newSessionId,
+        s3SessionPath: invocationPayload.sessionPath,
+        lastActiveAt: new Date().toISOString(),
+        status: 'active',
+      });
+    }
+
+    // 11. Track usage
+    if (result.tokensUsed) {
+      await updateUserUsage(payload.userId, result.tokensUsed).catch((err) =>
+        logger.error(err, 'Failed to update user usage'),
+      );
+    }
+
+    const duration = Date.now() - startTime;
+    logger.info(
+      {
+        botId: payload.botId,
+        groupJid: payload.groupJid,
+        durationMs: duration,
+        status: result.status,
+      },
+      'Message dispatch complete',
+    );
+  } finally {
+    // Always release the agent slot, even on error
+    await releaseAgentSlot(payload.userId).catch((err) =>
+      logger.error(err, 'Failed to release agent slot'),
     );
   }
-
-  // 8. Update session
-  if (result.newSessionId) {
-    await putSession({
-      botId: payload.botId,
-      groupJid: payload.groupJid,
-      agentcoreSessionId: result.newSessionId,
-      s3SessionPath: invocationPayload.sessionPath,
-      lastActiveAt: new Date().toISOString(),
-      status: 'active',
-    });
-  }
-
-  // 9. Track usage
-  if (result.tokensUsed) {
-    await updateUserUsage(payload.userId, result.tokensUsed).catch((err) =>
-      logger.error(err, 'Failed to update user usage'),
-    );
-  }
-
-  const duration = Date.now() - startTime;
-  logger.info(
-    {
-      botId: payload.botId,
-      groupJid: payload.groupJid,
-      durationMs: duration,
-      status: result.status,
-    },
-    'Message dispatch complete',
-  );
 }
 
 // ── Scheduled task dispatch ─────────────────────────────────────────────────

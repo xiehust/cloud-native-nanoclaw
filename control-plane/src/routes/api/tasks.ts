@@ -13,6 +13,7 @@ import {
 } from '@aws-sdk/client-scheduler';
 import {
   getBot,
+  getUser,
   createTask,
   getTask,
   listTasks,
@@ -90,6 +91,17 @@ export const tasksRoutes: FastifyPluginAsync = async (app) => {
     }
 
     const body = createTaskSchema.parse(request.body as CreateTaskRequest);
+
+    // Quota check: ensure user hasn't exceeded max tasks per bot
+    const user = await getUser(request.userId);
+    if (user) {
+      const existingTasks = await listTasks(botId);
+      const activeTasks = existingTasks.filter((t) => t.status !== 'completed');
+      if (activeTasks.length >= user.quota.maxTasksPerBot) {
+        return reply.status(403).send({ error: 'Task limit reached for this bot. Upgrade your plan to create more tasks.' });
+      }
+    }
+
     const now = new Date().toISOString();
     const taskId = ulid();
 

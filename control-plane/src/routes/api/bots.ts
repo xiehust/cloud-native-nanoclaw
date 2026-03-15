@@ -7,6 +7,7 @@ import { ulid } from 'ulid';
 import {
   createBot,
   getBot,
+  getUser,
   listBots,
   updateBot,
   deleteBot,
@@ -25,8 +26,14 @@ const updateBotSchema = z.object({
   description: z.string().max(500).optional(),
   systemPrompt: z.string().max(10000).optional(),
   triggerPattern: z.string().max(200).optional(),
-  status: z.enum(['active', 'paused']).optional(),
+  status: z.enum(['active', 'paused', 'deleted']).optional(),
 });
+
+const validTransitions: Record<string, string[]> = {
+  created: ['active', 'deleted'],
+  active: ['paused', 'deleted'],
+  paused: ['active', 'deleted'],
+};
 
 export const botsRoutes: FastifyPluginAsync = async (app) => {
   // List all bots for the authenticated user
@@ -39,6 +46,17 @@ export const botsRoutes: FastifyPluginAsync = async (app) => {
   // Create a new bot
   app.post('/', async (request, reply) => {
     const body = createBotSchema.parse(request.body as CreateBotRequest);
+
+    // Quota check: ensure user hasn't exceeded max bots
+    const user = await getUser(request.userId);
+    if (user) {
+      const allBots = await listBots(request.userId);
+      const activeBots = allBots.filter((b) => b.status !== 'deleted');
+      if (activeBots.length >= user.quota.maxBots) {
+        return reply.status(403).send({ error: 'Bot limit reached. Upgrade your plan to create more bots.' });
+      }
+    }
+
     const now = new Date().toISOString();
 
     const bot: Bot = {
@@ -48,7 +66,7 @@ export const botsRoutes: FastifyPluginAsync = async (app) => {
       description: body.description,
       systemPrompt: body.systemPrompt,
       triggerPattern: body.triggerPattern || `@${body.name}`,
-      status: 'active',
+      status: 'created',
       createdAt: now,
       updatedAt: now,
     };
@@ -78,6 +96,16 @@ export const botsRoutes: FastifyPluginAsync = async (app) => {
       const existing = await getBot(request.userId, botId);
       if (!existing || existing.status === 'deleted') {
         return reply.status(404).send({ error: 'Bot not found' });
+      }
+
+      // Validate state transition
+      if (updates.status) {
+        const allowed = validTransitions[existing.status];
+        if (!allowed || !allowed.includes(updates.status)) {
+          return reply.status(400).send({
+            error: `Invalid status transition from '${existing.status}' to '${updates.status}'`,
+          });
+        }
       }
 
       await updateBot(request.userId, botId, updates);
