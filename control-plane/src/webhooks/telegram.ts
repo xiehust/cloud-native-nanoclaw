@@ -96,9 +96,13 @@ export const telegramWebhook: FastifyPluginAsync = async (app) => {
       try {
         // 1. Load bot config (cache -> DynamoDB)
         const bot = await getCachedBot(botId);
-        if (!bot || bot.status !== 'active') {
-          logger.warn({ botId }, 'Bot not found or inactive');
+        if (!bot) {
+          logger.warn({ botId }, 'Bot not found');
           return reply.status(200).send({ ok: true }); // 200 so Telegram doesn't retry
+        }
+        if (bot.status !== 'active') {
+          logger.info({ botId, status: bot.status }, 'Bot not active');
+          return reply.status(200).send({ ok: true });
         }
 
         // 2. Load channel credentials (cache -> Secrets Manager)

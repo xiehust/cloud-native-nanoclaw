@@ -89,8 +89,12 @@ export const discordWebhook: FastifyPluginAsync = async (app) => {
 
         // 2. Load bot config
         const bot = await getCachedBot(botId);
-        if (!bot || bot.status !== 'active') {
-          logger.warn({ botId }, 'Bot not found or inactive');
+        if (!bot) {
+          logger.warn({ botId }, 'Bot not found');
+          return reply.status(200).send({ ok: true });
+        }
+        if (bot.status !== 'active') {
+          logger.info({ botId, status: bot.status }, 'Bot not active');
           return reply.status(200).send({ ok: true });
         }
 
