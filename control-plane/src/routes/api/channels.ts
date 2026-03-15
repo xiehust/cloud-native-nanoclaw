@@ -7,6 +7,7 @@ import {
   SecretsManagerClient,
   CreateSecretCommand,
   DeleteSecretCommand,
+  PutSecretValueCommand,
 } from '@aws-sdk/client-secrets-manager';
 import { config } from '../../config.js';
 import {
@@ -15,6 +16,7 @@ import {
   createChannel,
   getChannelsByBot,
   deleteChannel,
+  updateChannelHealth,
 } from '../../services/dynamo.js';
 import { getChannelCredentials } from '../../services/cached-lookups.js';
 import { verifyChannelCredentials } from '../../channels/index.js';
@@ -74,7 +76,11 @@ export const channelsRoutes: FastifyPluginAsync = async (app) => {
       });
     }
 
-    // 2. Store credentials in Secrets Manager
+    // 2. Generate webhook secret upfront (for Telegram) so it can be persisted
+    const webhookSecret =
+      body.channelType === 'telegram' ? crypto.randomUUID() : undefined;
+
+    // 3. Store credentials in Secrets Manager (including webhookSecret for Telegram)
     const secretName = `clawbot/${config.stage}/${botId}/${body.channelType}`;
     const secretResult = await secrets.send(
       new CreateSecretCommand({
@@ -82,33 +88,33 @@ export const channelsRoutes: FastifyPluginAsync = async (app) => {
         SecretString: JSON.stringify({
           ...body.credentials,
           ...verifiedInfo,
+          ...(webhookSecret ? { webhookSecret } : {}),
         }),
         Description: `ClawBot ${body.channelType} credentials for bot ${botId}`,
       }),
     );
 
-    // 3. Determine channel ID from verified info
+    // 4. Determine channel ID from verified info
     const channelId =
       verifiedInfo.botId ||
       verifiedInfo.applicationId ||
       verifiedInfo.botUserId ||
       'default';
 
-    // 4. Build webhook URL
+    // 5. Build webhook URL
     const webhookBase =
       config.webhookBaseUrl || `https://${config.stage}.clawbot.ai`;
     const webhookUrl = `${webhookBase}/webhook/${body.channelType}/${botId}`;
 
-    // 5. Register webhook with channel provider
+    // 6. Register webhook with channel provider
     let webhookRegistered = false;
     let setupInstructions: string | undefined;
 
     if (body.channelType === 'telegram') {
-      const webhookSecret = crypto.randomUUID();
       await telegram.setWebhook(
         body.credentials.botToken,
         webhookUrl,
-        webhookSecret,
+        webhookSecret!,
       );
       webhookRegistered = true;
     } else {
@@ -121,7 +127,7 @@ export const channelsRoutes: FastifyPluginAsync = async (app) => {
       setupInstructions = instructions[body.channelType];
     }
 
-    // 6. Create channel record
+    // 7. Create channel record
     const channel: ChannelConfig = {
       botId,
       channelType: body.channelType,
@@ -177,6 +183,82 @@ export const channelsRoutes: FastifyPluginAsync = async (app) => {
       } catch {
         return { ok: false };
       }
+    },
+  );
+
+  // Update channel credentials
+  app.put<{ Params: { botId: string; channelKey: string } }>(
+    '/:channelKey',
+    async (request, reply) => {
+      const { botId, channelKey } = request.params;
+
+      // Verify bot ownership
+      const bot = await getBot(request.userId, botId);
+      if (!bot || bot.status === 'deleted') {
+        return reply.status(404).send({ error: 'Bot not found' });
+      }
+
+      // Find the existing channel
+      const channels = await getChannelsByBot(botId);
+      const decodedKey = decodeURIComponent(channelKey);
+      const channel = channels.find(
+        (ch) => `${ch.channelType}#${ch.channelId}` === decodedKey,
+      );
+      if (!channel) {
+        return reply.status(404).send({ error: 'Channel not found' });
+      }
+
+      const body = z
+        .object({ credentials: z.record(z.string(), z.string()) })
+        .parse(request.body);
+
+      // 1. Validate new credentials
+      let verifiedInfo: Record<string, string>;
+      try {
+        verifiedInfo = await verifyChannelCredentials(
+          channel.channelType,
+          body.credentials,
+        );
+      } catch (err) {
+        return reply.status(400).send({
+          error: `Failed to verify ${channel.channelType} credentials: ${(err as Error).message}`,
+        });
+      }
+
+      // 2. Generate new webhook secret for Telegram
+      const webhookSecret =
+        channel.channelType === 'telegram' ? crypto.randomUUID() : undefined;
+
+      // 3. Update the secret in Secrets Manager
+      await secrets.send(
+        new PutSecretValueCommand({
+          SecretId: channel.credentialSecretArn,
+          SecretString: JSON.stringify({
+            ...body.credentials,
+            ...verifiedInfo,
+            ...(webhookSecret ? { webhookSecret } : {}),
+          }),
+        }),
+      );
+
+      // 4. Re-register webhook for Telegram
+      if (channel.channelType === 'telegram') {
+        await telegram.setWebhook(
+          body.credentials.botToken,
+          channel.webhookUrl,
+          webhookSecret!,
+        );
+      }
+
+      // 5. Reset health status
+      await updateChannelHealth(botId, decodedKey, 'healthy', 0);
+
+      return {
+        ...channel,
+        healthStatus: 'healthy',
+        consecutiveFailures: 0,
+        credentialSecretArn: '[redacted]',
+      };
     },
   );
 
