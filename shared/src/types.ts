@@ -202,7 +202,7 @@ export interface MemoryPaths {
   identity?: string; // {userId}/{botId}/IDENTITY.md (read-only, who am I)
   soul?: string; // {userId}/{botId}/SOUL.md (read-only, values and behavior)
   bootstrap?: string; // {userId}/{botId}/BOOTSTRAP.md (read-only, new-session-only)
-  user?: string; // {userId}/{botId}/memory/{groupJid}/USER.md (read-only, about humans)
+  user?: string; // {userId}/shared/USER.md (read-only, about the human user)
 }
 
 // Evolved from NanoClaw's ContainerOutput (stdout markers)

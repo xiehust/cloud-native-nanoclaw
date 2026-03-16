@@ -166,13 +166,13 @@ describe('buildSystemPrompt', () => {
     vi.mocked(memoryModule.loadUserFile).mockResolvedValue('Alice is a product manager.');
 
     const result = await buildSystemPrompt(baseOpts);
-    expect(result).toContain('# About Your Users');
+    expect(result).toContain('# About Your User');
     expect(result).toContain('Alice is a product manager.');
   });
 
   it('skips user context when no USER.md', async () => {
     const result = await buildSystemPrompt(baseOpts);
-    expect(result).not.toContain('# About Your Users');
+    expect(result).not.toContain('# About Your User');
   });
 
   // ── Section 7: Memory ───────────────────────────────────────────────
@@ -230,7 +230,7 @@ describe('buildSystemPrompt', () => {
     const bootstrapIdx = result.indexOf('# First Session');
     const channelIdx = result.indexOf('# Channel:');
     const replyIdx = result.indexOf('# Reply Guidelines');
-    const userIdx = result.indexOf('# About Your Users');
+    const userIdx = result.indexOf('# About Your User');
     const memoryIdx = result.indexOf('# Shared Memory');
     const runtimeIdx = result.indexOf('Runtime:');
 

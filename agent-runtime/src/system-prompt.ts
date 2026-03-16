@@ -5,14 +5,15 @@
  * architecture but adapted for NanoClaw's multi-tenant model.
  *
  * Section order:
- *   1. Identity       — "You are {botName}..."
- *   2. Persona        — PERSONA.md or Bot.systemPrompt fallback
- *   3. Bootstrap      — BOOTSTRAP.md (only for new sessions)
- *   4. Channel        — Channel-specific formatting guidance
- *   5. Reply Guide    — Response conventions
- *   6. User Context   — USER.md (about the humans)
- *   7. Memory         — Shared + Bot Global + Group CLAUDE.md (with token budgets)
- *   8. Runtime        — Metadata line for debugging
+ *   1. Identity          — "You are {botName}..."
+ *   2. Identity Context  — IDENTITY.md or Bot.systemPrompt fallback
+ *   3. Soul             — SOUL.md (values and behavior)
+ *   4. Bootstrap        — BOOTSTRAP.md (only for new sessions)
+ *   5. Channel          — Channel-specific formatting guidance
+ *   6. Reply Guide      — Response conventions
+ *   7. User Context     — USER.md (about the human user, user-level)
+ *   8. Memory           — Shared + Bot Global + Group CLAUDE.md (with token budgets)
+ *   9. Runtime          — Metadata line for debugging
  *
  * Result is appended to Claude Code preset:
  *   { type: 'preset', preset: 'claude_code', append: builtContent }
@@ -37,7 +38,7 @@ export interface SystemPromptOptions {
   botName: string;
   channelType: ChannelType;
   groupJid: string;
-  /** Bot.systemPrompt fallback when PERSONA.md doesn't exist */
+  /** Bot.systemPrompt fallback when IDENTITY.md doesn't exist */
   systemPrompt?: string;
   isScheduledTask?: boolean;
   /** Controls BOOTSTRAP.md injection — true when no existing session */
@@ -131,7 +132,7 @@ async function buildSoulSection(
   return `# Your Soul\nThese are your core values and behavioral guidelines:\n\n${soul}`;
 }
 
-// ── Section 3: Bootstrap ──────────────────────────────────────────────────
+// ── Section 4: Bootstrap ──────────────────────────────────────────────────
 
 async function buildBootstrapSection(
   config?: TruncationConfig,
@@ -143,7 +144,7 @@ async function buildBootstrapSection(
   return `# First Session Instructions\nThis is a new conversation. Follow these initial instructions:\n\n${bootstrap}`;
 }
 
-// ── Section 4: Channel Guidance ───────────────────────────────────────────
+// ── Section 5: Channel Guidance ───────────────────────────────────────────
 
 const CHANNEL_GUIDANCE: Partial<Record<ChannelType, string>> = {
   discord: `# Channel: Discord
@@ -188,7 +189,7 @@ function buildChannelGuidance(channelType: ChannelType): string {
   return CHANNEL_GUIDANCE[channelType] || `# Channel: ${channelType}\nYou are responding on ${channelType}.`;
 }
 
-// ── Section 5: Reply Guidelines ───────────────────────────────────────────
+// ── Section 6: Reply Guidelines ───────────────────────────────────────────
 
 function buildReplyGuidelines(isScheduledTask?: boolean): string {
   const lines = [
@@ -208,7 +209,7 @@ function buildReplyGuidelines(isScheduledTask?: boolean): string {
   return lines.join('\n');
 }
 
-// ── Section 6: User Context ───────────────────────────────────────────────
+// ── Section 7: User Context ───────────────────────────────────────────────
 
 async function buildUserContextSection(
   config?: TruncationConfig,
@@ -217,10 +218,10 @@ async function buildUserContextSection(
   if (!userCtx) return null;
 
   if (config) userCtx = truncateContent(userCtx, config.perFileCap, config);
-  return `# About Your Users\n${userCtx}`;
+  return `# About Your User\n${userCtx}`;
 }
 
-// ── Section 7: Memory ─────────────────────────────────────────────────────
+// ── Section 8: Memory ─────────────────────────────────────────────────────
 
 async function buildMemorySection(
   config?: TruncationConfig,
@@ -231,7 +232,7 @@ async function buildMemorySection(
   return layers.map((l) => `${l.label}\n${l.content}`).join('\n\n---\n\n');
 }
 
-// ── Section 8: Runtime Metadata ───────────────────────────────────────────
+// ── Section 9: Runtime Metadata ───────────────────────────────────────────
 
 function buildRuntimeMetadata(opts: SystemPromptOptions): string {
   return `Runtime: bot=${opts.botId} | name=${opts.botName} | channel=${opts.channelType} | group=${opts.groupJid}`;

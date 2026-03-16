@@ -129,7 +129,7 @@ async function dispatchMessage(
         identity: `${payload.userId}/${payload.botId}/IDENTITY.md`,
         soul: `${payload.userId}/${payload.botId}/SOUL.md`,
         bootstrap: `${payload.userId}/${payload.botId}/BOOTSTRAP.md`,
-        user: `${payload.userId}/${payload.botId}/memory/${payload.groupJid}/USER.md`,
+        user: `${payload.userId}/shared/USER.md`,
       },
       ...(payload.attachments && payload.attachments.length > 0 && {
         attachments: payload.attachments,
@@ -261,7 +261,7 @@ async function dispatchTask(
       identity: `${payload.userId}/${payload.botId}/IDENTITY.md`,
       soul: `${payload.userId}/${payload.botId}/SOUL.md`,
       bootstrap: `${payload.userId}/${payload.botId}/BOOTSTRAP.md`,
-      user: `${payload.userId}/${payload.botId}/memory/${payload.groupJid}/USER.md`,
+      user: `${payload.userId}/shared/USER.md`,
     },
   };
 

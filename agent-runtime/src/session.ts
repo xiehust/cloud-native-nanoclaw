@@ -30,13 +30,13 @@ export interface SyncPaths {
   botGlobalMemory: string;
   /** S3 key for user shared CLAUDE.md (read-only) */
   sharedMemory: string;
-  /** S3 key for IDENTITY.md — who am I (read-only) */
+  /** S3 key for IDENTITY.md — who am I (read-write, Agent can update) */
   identityFile?: string;
-  /** S3 key for SOUL.md — values and behavior (read-only) */
+  /** S3 key for SOUL.md — values and behavior (read-write, Agent can update) */
   soulFile?: string;
-  /** S3 key for BOOTSTRAP.md — new-session-only instructions (read-only) */
+  /** S3 key for BOOTSTRAP.md (read-write, Agent deletes after bootstrap) */
   bootstrapFile?: string;
-  /** S3 key for USER.md — about the humans in this conversation (read-only) */
+  /** S3 key for USER.md — about the human user (read-write, Agent can update) */
   userFile?: string;
 }
 
@@ -77,9 +77,9 @@ export async function syncFromS3(
     await downloadFile(s3, bucket, paths.bootstrapFile, join(WORKSPACE_BASE, 'identity', 'BOOTSTRAP.md'), logger);
   }
 
-  // 7. Download USER.md → /workspace/group/USER.md (read-only)
+  // 8. Download USER.md → /workspace/shared/USER.md (user-level)
   if (paths.userFile) {
-    await downloadFile(s3, bucket, paths.userFile, join(WORKSPACE_BASE, 'group', 'USER.md'), logger);
+    await downloadFile(s3, bucket, paths.userFile, join(WORKSPACE_BASE, 'shared', 'USER.md'), logger);
   }
 }
 
@@ -110,7 +110,7 @@ export async function syncToS3(
     { localPath: join(WORKSPACE_BASE, 'identity', 'IDENTITY.md'), s3Key: paths.identityFile },
     { localPath: join(WORKSPACE_BASE, 'identity', 'SOUL.md'), s3Key: paths.soulFile },
     { localPath: join(WORKSPACE_BASE, 'identity', 'BOOTSTRAP.md'), s3Key: paths.bootstrapFile },
-    { localPath: join(WORKSPACE_BASE, 'group', 'USER.md'), s3Key: paths.userFile },
+    { localPath: join(WORKSPACE_BASE, 'shared', 'USER.md'), s3Key: paths.userFile },
   ];
 
   for (const { localPath, s3Key } of contextFiles) {

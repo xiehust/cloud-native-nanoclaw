@@ -42,7 +42,7 @@ const basePayload: InvocationPayload = {
     identity: 'user-1/bot-1/IDENTITY.md',
     soul: 'user-1/bot-1/SOUL.md',
     bootstrap: 'user-1/bot-1/BOOTSTRAP.md',
-    user: 'user-1/bot-1/memory/tg:123/USER.md',
+    user: 'user-1/shared/USER.md',
   },
 };
 

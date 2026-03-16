@@ -24,28 +24,55 @@ Agent 运行时需要一个结构化的系统提示词来引导 Claude 的行为
 S3 存储结构:
 {userId}/
 ├── shared/
-│   └── CLAUDE.md                 ← 用户级：跨 Bot 共享记忆 (read-only)
+│   ├── CLAUDE.md                 ← User 级：跨 Bot 共享记忆 (read-only)
+│   └── USER.md                   ← User 级：关于人类用户 (read-write by Agent)
 └── {botId}/
     ├── IDENTITY.md               ← Bot 级：身份定义 (read-write by Agent)
     ├── SOUL.md                   ← Bot 级：价值观和行为准则 (read-write by Agent)
-    ├── BOOTSTRAP.md              ← Bot 级：新会话首次指令 (Agent 完成后删除)
+    ├── BOOTSTRAP.md              ← Bot 级：首次引导 (Agent 完成后删除)
     └── memory/
         ├── global/
         │   └── CLAUDE.md         ← Bot 级：持久记忆 (read-only)
         └── {groupJid}/
-            ├── CLAUDE.md         ← Group 级：对话记忆 (read-write)
-            └── USER.md           ← Group 级：关于对话中的人 (read-only)
+            └── CLAUDE.md         ← Group 级：对话记忆 (read-write)
 ```
 
 | 文件 | 层级 | 读写 | 用途 | 类比 OpenClaw |
 |------|------|------|------|--------------|
+| `USER.md` | User | 读写 | 关于人类用户（跨 Bot 共享） | USER.md |
 | `IDENTITY.md` | Bot | 读写 | 身份定义（名字、角色、性格） | IDENTITY.md |
 | `SOUL.md` | Bot | 读写 | 价值观和行为准则 | SOUL.md |
 | `BOOTSTRAP.md` | Bot | 读写 | 首次对话引导（Agent 完成后自行删除） | BOOTSTRAP.md |
-| `USER.md` | Group | 只读 | 关于对话中的人类用户 | USER.md |
 | `CLAUDE.md` (shared) | User | 只读 | 跨 Bot 共享知识 | — |
 | `CLAUDE.md` (global) | Bot | 只读 | Bot 级持久记忆 | MEMORY.md |
 | `CLAUDE.md` (group) | Group | 读写 | 对话级记忆，Agent 可自主更新 | memory/*.md |
+
+### 默认模板与 Agent 自主引导
+
+默认模板文件打包在 Agent Runtime Docker 镜像中（`/app/templates/`）：
+
+```
+agent-runtime/templates/
+├── BOOTSTRAP.md    — 首次对话引导脚本（灵感来自 OpenClaw）
+├── IDENTITY.md     — 身份模板（空白字段）
+├── SOUL.md         — 价值观模板
+└── USER.md         — 用户档案模板
+```
+
+**首次运行流程：**
+
+```
+1. syncFromS3()           → S3 无文件，workspace 为空
+2. 检查 IDENTITY.md       → 不存在 → 复制 BOOTSTRAP.md, IDENTITY.md, SOUL.md 模板
+3. 检查 USER.md           → 不存在 → 复制 USER.md 模板
+4. buildSystemPrompt()    → BOOTSTRAP.md 注入 system prompt
+5. Agent 与用户对话        → 共同定义身份、价值观、用户信息
+6. Agent 用 Write 工具     → 更新 IDENTITY.md, SOUL.md, USER.md
+7. Agent 用 Bash rm       → 删除 BOOTSTRAP.md
+8. syncToS3()             → 上传修改的文件，删除 BOOTSTRAP.md 的 S3 key
+```
+
+**后续运行：** S3 已有 IDENTITY.md → syncFromS3 下载 → 模板检查跳过 → Agent 正常工作。
 
 ---
 
@@ -73,11 +100,11 @@ S3 存储结构:
     │  2. About You     ← IDENTITY.md / systemPrompt│
     │  3. Your Soul     ← SOUL.md                   │
     │  4. Bootstrap     ← BOOTSTRAP.md (new only)   │
-    │  4. Channel       ← channelType               │
-    │  5. Reply Guide   ← isScheduledTask           │
-    │  6. User Context  ← USER.md                   │
-    │  7. Memory        ← 3× CLAUDE.md (budgeted)   │
-    │  8. Runtime       ← metadata line              │
+    │  5. Channel       ← channelType               │
+    │  6. Reply Guide   ← isScheduledTask           │
+    │  7. User Context  ← USER.md (user-level)      │
+    │  8. Memory        ← 3× CLAUDE.md (budgeted)   │
+    │  9. Runtime       ← metadata line              │
     └──────────────────────────────────────────────┘
                               │
                               ▼
@@ -125,7 +152,7 @@ These are your core values and behavioral guidelines:
 
 SOUL.md 定义 Agent 的价值观、沟通风格、边界。如不存在则跳过。
 
-### Section 3: Bootstrap
+### Section 4: Bootstrap
 
 ```
 # First Session Instructions
@@ -140,7 +167,7 @@ This is a new conversation. Follow these initial instructions:
 
 典型用途：首次交互时自我介绍、询问用户需求、建立对话基调。
 
-### Section 4: Channel Guidance
+### Section 5: Channel Guidance
 
 根据 `channelType` 注入对应的格式指导：
 
@@ -153,7 +180,7 @@ This is a new conversation. Follow these initial instructions:
 
 这确保 Agent 生成的回复在目标平台上正确渲染。
 
-### Section 5: Reply Guidelines
+### Section 6: Reply Guidelines
 
 ```
 # Reply Guidelines
@@ -169,16 +196,16 @@ This is a new conversation. Follow these initial instructions:
 Complete the task and report results.
 ```
 
-### Section 6: User Context
+### Section 7: User Context
 
 ```
 # About Your Users
 {USER.md 内容}
 ```
 
-GROUP 级别的文件，描述对话中的人类用户。仅在 `USER.md` 存在时注入。
+User 级别的文件（`{userId}/shared/USER.md`），描述人类用户本人。跨 Bot 共享。仅在 `USER.md` 存在时注入。
 
-### Section 7: Memory
+### Section 8: Memory
 
 ```
 # Shared Memory
@@ -197,7 +224,7 @@ GROUP 级别的文件，描述对话中的人类用户。仅在 `USER.md` 存在
 
 三层记忆按层级加载，每层受 token 预算约束（见 §16.5）。
 
-### Section 8: Runtime Metadata
+### Section 9: Runtime Metadata
 
 ```
 Runtime: bot=01KKRN... | name=MyBot | channel=discord | group=dc:1234567
@@ -264,7 +291,7 @@ System prompt 通过 `append` 模式注入：
 systemPrompt: {
   type: 'preset',
   preset: 'claude_code',
-  append: builtContent   // ← 我们构建的 8 sections
+  append: builtContent   // ← 我们构建的 9 sections
 }
 ```
 
@@ -285,12 +312,14 @@ systemPrompt: {
    │  构建 InvocationPayload，包含:
    │  - prompt: XML 格式的消息历史
    │  - systemPrompt: Bot.systemPrompt 字段
-   │  - memoryPaths: { shared, botGlobal, group, persona, bootstrap, user }
+   │  - memoryPaths: { shared, botGlobal, group, identity, soul, bootstrap, user }
    │
    ▼
 2. AgentCore invocation → Agent Runtime (agent.ts)
    │
-   ├─ syncFromS3(): 下载 session + 6 个 context 文件到 /workspace/
+   ├─ syncFromS3(): 下载 session + context 文件到 /workspace/
+   │
+   ├─ 模板检查: IDENTITY.md 不存在? → 从 /app/templates/ 复制默认模板
    │
    ├─ detectExistingSession(): 判断 isNewSession
    │
@@ -298,14 +327,19 @@ systemPrompt: {
    │    ├─ loadIdentityFile()    → /workspace/identity/IDENTITY.md
    │    ├─ loadSoulFile()        → /workspace/identity/SOUL.md
    │    ├─ loadBootstrapFile()   → /workspace/identity/BOOTSTRAP.md (if new)
-   │    ├─ loadUserFile()        → /workspace/group/USER.md
+   │    ├─ loadUserFile()        → /workspace/shared/USER.md
    │    ├─ loadMemoryLayers()    → 3× CLAUDE.md with truncation
-   │    └─ assemble 8 sections   → joined string
+   │    └─ assemble 9 sections   → joined string
    │
    ├─ query({ prompt, systemPrompt: { preset: 'claude_code', append: built } })
    │    └─ Claude Agent SDK 执行...
+   │    └─ Agent 可用 Write/Edit 修改 IDENTITY.md, SOUL.md, USER.md
+   │    └─ Agent 可用 Bash rm 删除 BOOTSTRAP.md
    │
-   └─ syncToS3(): 回写 session + group CLAUDE.md
+   └─ syncToS3():
+        ├─ 回写 session + group CLAUDE.md
+        ├─ 上传 IDENTITY.md, SOUL.md, USER.md (如存在)
+        └─ 删除 BOOTSTRAP.md 的 S3 key (如已被 Agent 删除)
 ```
 
 ---
@@ -319,7 +353,7 @@ systemPrompt: {
 | GET/PUT | `/bots/:botId/identity` | IDENTITY.md (Bot 身份) |
 | GET/PUT | `/bots/:botId/soul` | SOUL.md (Bot 价值观) |
 | GET/PUT | `/bots/:botId/bootstrap` | BOOTSTRAP.md (新会话指令) |
-| GET/PUT | `/bots/:botId/groups/:gid/user-context` | USER.md (关于用户) |
+| GET/PUT | `/user-profile` | USER.md (用户档案，跨 Bot 共享) |
 | GET/PUT | `/bots/:botId/memory` | Bot Global CLAUDE.md |
 | GET/PUT | `/bots/:botId/groups/:gid/memory` | Group CLAUDE.md |
 | GET/PUT | `/shared-memory` | User Shared CLAUDE.md |
@@ -329,12 +363,12 @@ systemPrompt: {
 6 个标签页，通过 `?tab=` 查询参数切换：
 
 ```
-[Shared] [Identity] [Soul] [Bootstrap] [Bot Memory] [Group Memory] [User Context]
+[Shared] [User Profile] [Identity] [Soul] [Bootstrap] [Bot Memory] [Group Memory]
 ```
 
-- Bot 级标签（Persona, Bootstrap, Bot Memory）：在 `/bots/:botId/memory` 路径下显示
-- Group 级标签（Group Memory, User Context）：在 `/bots/:botId/groups/:gid/memory` 路径下显示
-- User 级标签（Shared）：在 `/memory` 路径下显示
+- User 级标签（Shared, User Profile）：在 `/memory` 路径下显示
+- Bot 级标签（Identity, Soul, Bootstrap, Bot Memory）：在 `/bots/:botId/memory` 路径下显示
+- Group 级标签（Group Memory）：在 `/bots/:botId/groups/:gid/memory` 路径下显示
 
 ---
 

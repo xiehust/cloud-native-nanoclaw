@@ -106,15 +106,15 @@ async function _handleInvocation(
     copyIfMissing(TEMPLATES, 'SOUL.md', '/workspace/identity');
     logger.info('Default identity templates copied (first-run bootstrap)');
   }
-  if (!fs.existsSync('/workspace/group/USER.md')) {
-    copyIfMissing(TEMPLATES, 'USER.md', '/workspace/group');
+  if (!fs.existsSync('/workspace/shared/USER.md')) {
+    copyIfMissing(TEMPLATES, 'USER.md', '/workspace/shared');
   }
 
   // 4. Detect existing session (needed for bootstrap injection decision)
   const existingSessionId = detectExistingSession();
   const isNewSession = !existingSessionId;
 
-  // 4. Build structured system prompt (identity, persona, channel, memory, etc.)
+  // 4. Build structured system prompt (identity, soul, channel, memory, etc.)
   const systemPromptContent = await buildSystemPrompt({
     botId,
     botName,

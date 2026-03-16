@@ -7,9 +7,10 @@
  *   Layer 3: Group memory    (read-write, per conversation)
  *
  * Additional context files:
- *   PERSONA.md   (bot-level identity + tone)
+ *   IDENTITY.md  (bot-level, who am I)
+ *   SOUL.md      (bot-level, values and behavior)
  *   BOOTSTRAP.md (bot-level, new-session-only instructions)
- *   USER.md      (group-level, about the humans)
+ *   USER.md      (user-level, about the human user)
  *
  * Token budgeting prevents large files from blowing the context window.
  * Truncation strategy: keep 70% head + 20% tail + [...truncated...] marker.
@@ -135,9 +136,9 @@ export async function loadBootstrapFile(): Promise<string | null> {
   return safeReadFile(join(WORKSPACE_BASE, 'identity', 'BOOTSTRAP.md'));
 }
 
-/** Load USER.md (group-level, about the humans in this conversation) */
+/** Load USER.md (user-level, about the human user) */
 export async function loadUserFile(): Promise<string | null> {
-  return safeReadFile(join(WORKSPACE_BASE, 'group', 'USER.md'));
+  return safeReadFile(join(WORKSPACE_BASE, 'shared', 'USER.md'));
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────

@@ -200,28 +200,16 @@ export const memoryRoutes: FastifyPluginAsync = async (app) => {
     },
   );
 
-  // ── Group User Context (USER.md) ─────────────────────────────────────
+  // ── User Profile (USER.md — user-level, shared across all bots) ─────
 
-  app.get<{ Params: { botId: string; groupJid: string } }>(
-    '/bots/:botId/groups/:groupJid/user-context',
-    async (request, reply) => {
-      const { botId, groupJid } = request.params;
-      const bot = await getBot(request.userId, botId);
-      if (!bot) return reply.status(404).send({ error: 'Bot not found' });
-      const key = `${request.userId}/${botId}/memory/${groupJid}/USER.md`;
-      return { content: await readMemory(key) };
-    },
-  );
+  app.get('/user-profile', async (request) => {
+    const key = `${request.userId}/shared/USER.md`;
+    return { content: await readMemory(key) };
+  });
 
-  app.put<{ Params: { botId: string; groupJid: string } }>(
-    '/bots/:botId/groups/:groupJid/user-context',
-    async (request, reply) => {
-      const { botId, groupJid } = request.params;
-      const bot = await getBot(request.userId, botId);
-      if (!bot) return reply.status(404).send({ error: 'Bot not found' });
-      const { content } = putMemorySchema.parse(request.body);
-      await writeMemory(`${request.userId}/${botId}/memory/${groupJid}/USER.md`, content);
-      return { content };
-    },
-  );
+  app.put('/user-profile', async (request) => {
+    const { content } = putMemorySchema.parse(request.body);
+    await writeMemory(`${request.userId}/shared/USER.md`, content);
+    return { content };
+  });
 };

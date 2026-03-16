@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useParams, useSearchParams, Link } from 'react-router-dom';
 import { memory } from '../lib/api';
 
-type Level = 'shared' | 'bot-global' | 'group' | 'identity' | 'soul' | 'bootstrap' | 'user-context';
+type Level = 'shared' | 'bot-global' | 'group' | 'identity' | 'soul' | 'bootstrap' | 'user-profile';
 
 const LEVEL_META: Record<Level, { label: string; description: string; placeholder: string }> = {
   shared: {
@@ -35,10 +35,10 @@ const LEVEL_META: Record<Level, { label: string; description: string; placeholde
     description: 'First-session instructions (BOOTSTRAP.md) — only injected when starting a new conversation',
     placeholder: '# First Contact\n- Greet the user and introduce yourself\n- Ask what they need help with\n- Explain your capabilities briefly',
   },
-  'user-context': {
-    label: 'User Context',
-    description: 'About the humans in this conversation (USER.md)',
-    placeholder: '# Users\n- Alice: Product manager, prefers concise answers\n- Bob: New engineer, needs detailed explanations',
+  'user-profile': {
+    label: 'User Profile',
+    description: 'About you — the human user (USER.md, shared across all bots)',
+    placeholder: '# Name\nAlice\n\n# Timezone\nAsia/Shanghai\n\n# Notes\nPrefers concise answers. Working on AI projects.',
   },
 };
 
@@ -97,9 +97,8 @@ export default function MemoryEditor() {
         case 'bootstrap':
           result = await memory.getBootstrap(botId!);
           break;
-        case 'user-context':
-          if (!groupJid) { setError('Group context required for User Context'); setLoading(false); return; }
-          result = await memory.getUserContext(botId!, groupJid);
+        case 'user-profile':
+          result = await memory.getUserProfile();
           break;
       }
       setContent(result.content || '');
@@ -134,8 +133,8 @@ export default function MemoryEditor() {
         case 'bootstrap':
           await memory.updateBootstrap(botId!, content);
           break;
-        case 'user-context':
-          await memory.updateUserContext(botId!, groupJid || '', content);
+        case 'user-profile':
+          await memory.updateUserProfile(content);
           break;
       }
       setSaved(true);
@@ -150,6 +149,7 @@ export default function MemoryEditor() {
   // Build tab list based on context
   const tabs: { level: Level; to: string }[] = [];
   tabs.push({ level: 'shared', to: '/memory' });
+  tabs.push({ level: 'user-profile', to: '/memory?tab=user-profile' });
   if (lastBotId.current) {
     tabs.push({ level: 'identity', to: `/bots/${lastBotId.current}/memory?tab=identity` });
     tabs.push({ level: 'soul', to: `/bots/${lastBotId.current}/memory?tab=soul` });
@@ -158,7 +158,6 @@ export default function MemoryEditor() {
   }
   if (lastBotId.current && lastGroupJid.current) {
     tabs.push({ level: 'group', to: `/bots/${lastBotId.current}/groups/${lastGroupJid.current}/memory` });
-    tabs.push({ level: 'user-context', to: `/bots/${lastBotId.current}/groups/${lastGroupJid.current}/memory?tab=user-context` });
   }
 
   return (

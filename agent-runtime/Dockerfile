@@ -80,7 +80,7 @@ COPY --from=builder /app/agent-runtime/package.json ./
 COPY agent-runtime/templates/ /app/templates/
 
 # Workspace directories (mirrors NanoClaw's /workspace layout)
-RUN mkdir -p /workspace/group /workspace/global /workspace/shared /workspace/extra /home/node/.claude
+RUN mkdir -p /workspace/group /workspace/global /workspace/shared /workspace/identity /workspace/extra /home/node/.claude
 
 # Set ownership to non-root user
 RUN chown -R node:node /workspace /home/node/.claude /home/node

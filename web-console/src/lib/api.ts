@@ -192,6 +192,6 @@ export const memory = {
   updateSoul: (botId: string, content: string) => request<MemoryResponse>(`/bots/${botId}/soul`, { method: 'PUT', body: JSON.stringify({ content }) }),
   getBootstrap: (botId: string) => request<MemoryResponse>(`/bots/${botId}/bootstrap`),
   updateBootstrap: (botId: string, content: string) => request<MemoryResponse>(`/bots/${botId}/bootstrap`, { method: 'PUT', body: JSON.stringify({ content }) }),
-  getUserContext: (botId: string, gid: string) => request<MemoryResponse>(`/bots/${botId}/groups/${gid}/user-context`),
-  updateUserContext: (botId: string, gid: string, content: string) => request<MemoryResponse>(`/bots/${botId}/groups/${gid}/user-context`, { method: 'PUT', body: JSON.stringify({ content }) }),
+  getUserProfile: () => request<MemoryResponse>('/user-profile'),
+  updateUserProfile: (content: string) => request<MemoryResponse>('/user-profile', { method: 'PUT', body: JSON.stringify({ content }) }),
 };
