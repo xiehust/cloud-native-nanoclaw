@@ -94,27 +94,52 @@ export const memoryRoutes: FastifyPluginAsync = async (app) => {
     },
   );
 
-  // ── Bot Persona (PERSONA.md) ───────────────────────────────────────────
+  // ── Bot Identity (IDENTITY.md) ─────────────────────────────────────────
 
   app.get<{ Params: { botId: string } }>(
-    '/bots/:botId/persona',
+    '/bots/:botId/identity',
     async (request, reply) => {
       const { botId } = request.params;
       const bot = await getBot(request.userId, botId);
       if (!bot) return reply.status(404).send({ error: 'Bot not found' });
-      const key = `${request.userId}/${botId}/PERSONA.md`;
+      const key = `${request.userId}/${botId}/IDENTITY.md`;
       return { content: await readMemory(key) };
     },
   );
 
   app.put<{ Params: { botId: string } }>(
-    '/bots/:botId/persona',
+    '/bots/:botId/identity',
     async (request, reply) => {
       const { botId } = request.params;
       const bot = await getBot(request.userId, botId);
       if (!bot) return reply.status(404).send({ error: 'Bot not found' });
       const { content } = putMemorySchema.parse(request.body);
-      await writeMemory(`${request.userId}/${botId}/PERSONA.md`, content);
+      await writeMemory(`${request.userId}/${botId}/IDENTITY.md`, content);
+      return { content };
+    },
+  );
+
+  // ── Bot Soul (SOUL.md) ───────────────────────────────────────────────
+
+  app.get<{ Params: { botId: string } }>(
+    '/bots/:botId/soul',
+    async (request, reply) => {
+      const { botId } = request.params;
+      const bot = await getBot(request.userId, botId);
+      if (!bot) return reply.status(404).send({ error: 'Bot not found' });
+      const key = `${request.userId}/${botId}/SOUL.md`;
+      return { content: await readMemory(key) };
+    },
+  );
+
+  app.put<{ Params: { botId: string } }>(
+    '/bots/:botId/soul',
+    async (request, reply) => {
+      const { botId } = request.params;
+      const bot = await getBot(request.userId, botId);
+      if (!bot) return reply.status(404).send({ error: 'Bot not found' });
+      const { content } = putMemorySchema.parse(request.body);
+      await writeMemory(`${request.userId}/${botId}/SOUL.md`, content);
       return { content };
     },
   );

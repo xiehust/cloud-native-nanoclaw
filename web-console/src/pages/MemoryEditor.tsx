@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useParams, useSearchParams, Link } from 'react-router-dom';
 import { memory } from '../lib/api';
 
-type Level = 'shared' | 'bot-global' | 'group' | 'persona' | 'bootstrap' | 'user-context';
+type Level = 'shared' | 'bot-global' | 'group' | 'identity' | 'soul' | 'bootstrap' | 'user-context';
 
 const LEVEL_META: Record<Level, { label: string; description: string; placeholder: string }> = {
   shared: {
@@ -20,10 +20,15 @@ const LEVEL_META: Record<Level, { label: string; description: string; placeholde
     description: 'Conversation-specific memory (CLAUDE.md)',
     placeholder: 'Enter group memory content...',
   },
-  persona: {
-    label: 'Persona',
-    description: 'Bot identity and tone (PERSONA.md) — defines who the bot is and how it speaks',
-    placeholder: '# Identity\nYou are Luna, a friendly customer support agent for Acme Corp.\n\n# Tone\n- Speak warmly and professionally\n- Use simple language\n- Be concise but thorough',
+  identity: {
+    label: 'Identity',
+    description: 'Who the bot is (IDENTITY.md)',
+    placeholder: '# Name\nLuna\n\n# Creature\nA friendly fox who loves helping people\n\n# Vibe\nWarm, approachable, and endlessly curious',
+  },
+  soul: {
+    label: 'Soul',
+    description: 'Core values and behavior (SOUL.md)',
+    placeholder: '# Core Truths\n- Honesty above all else\n- Meet people where they are\n\n# Boundaries\n- Never pretend to be human\n- Always admit uncertainty\n\n# Vibe\n- Genuine and grounded\n- Patient with complexity',
   },
   bootstrap: {
     label: 'Bootstrap',
@@ -83,8 +88,11 @@ export default function MemoryEditor() {
           if (!groupJid) { setError('Group context required'); setLoading(false); return; }
           result = await memory.getGroup(botId!, groupJid);
           break;
-        case 'persona':
-          result = await memory.getPersona(botId!);
+        case 'identity':
+          result = await memory.getIdentity(botId!);
+          break;
+        case 'soul':
+          result = await memory.getSoul(botId!);
           break;
         case 'bootstrap':
           result = await memory.getBootstrap(botId!);
@@ -117,8 +125,11 @@ export default function MemoryEditor() {
         case 'group':
           await memory.updateGroup(botId!, groupJid || '', content);
           break;
-        case 'persona':
-          await memory.updatePersona(botId!, content);
+        case 'identity':
+          await memory.updateIdentity(botId!, content);
+          break;
+        case 'soul':
+          await memory.updateSoul(botId!, content);
           break;
         case 'bootstrap':
           await memory.updateBootstrap(botId!, content);
@@ -140,7 +151,8 @@ export default function MemoryEditor() {
   const tabs: { level: Level; to: string }[] = [];
   tabs.push({ level: 'shared', to: '/memory' });
   if (lastBotId.current) {
-    tabs.push({ level: 'persona', to: `/bots/${lastBotId.current}/memory?tab=persona` });
+    tabs.push({ level: 'identity', to: `/bots/${lastBotId.current}/memory?tab=identity` });
+    tabs.push({ level: 'soul', to: `/bots/${lastBotId.current}/memory?tab=soul` });
     tabs.push({ level: 'bootstrap', to: `/bots/${lastBotId.current}/memory?tab=bootstrap` });
     tabs.push({ level: 'bot-global', to: `/bots/${lastBotId.current}/memory` });
   }

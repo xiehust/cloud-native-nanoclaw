@@ -76,6 +76,9 @@ COPY --from=builder /app/shared/dist/ ./node_modules/@clawbot/shared/dist/
 COPY --from=builder /app/shared/package.json ./node_modules/@clawbot/shared/
 COPY --from=builder /app/agent-runtime/package.json ./
 
+# Default context templates (IDENTITY.md, SOUL.md, BOOTSTRAP.md, USER.md)
+COPY agent-runtime/templates/ /app/templates/
+
 # Workspace directories (mirrors NanoClaw's /workspace layout)
 RUN mkdir -p /workspace/group /workspace/global /workspace/shared /workspace/extra /home/node/.claude
 

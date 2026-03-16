@@ -12,7 +12,8 @@
  *   /workspace/shared/    ← User-shared memory (read-only at runtime)
  */
 
-import { S3Client, GetObjectCommand, PutObjectCommand, ListObjectsV2Command } from '@aws-sdk/client-s3';
+import { S3Client, GetObjectCommand, PutObjectCommand, DeleteObjectCommand, ListObjectsV2Command } from '@aws-sdk/client-s3';
+import { existsSync } from 'fs';
 import { mkdir, readdir, readFile, writeFile } from 'fs/promises';
 import { join, dirname } from 'path';
 import type pino from 'pino';
@@ -29,8 +30,10 @@ export interface SyncPaths {
   botGlobalMemory: string;
   /** S3 key for user shared CLAUDE.md (read-only) */
   sharedMemory: string;
-  /** S3 key for PERSONA.md — bot identity + tone (read-only) */
-  personaFile?: string;
+  /** S3 key for IDENTITY.md — who am I (read-only) */
+  identityFile?: string;
+  /** S3 key for SOUL.md — values and behavior (read-only) */
+  soulFile?: string;
   /** S3 key for BOOTSTRAP.md — new-session-only instructions (read-only) */
   bootstrapFile?: string;
   /** S3 key for USER.md — about the humans in this conversation (read-only) */
@@ -59,14 +62,19 @@ export async function syncFromS3(
   // 4. Download shared memory → /workspace/shared/CLAUDE.md (read-only)
   await downloadFile(s3, bucket, paths.sharedMemory, join(WORKSPACE_BASE, 'shared', 'CLAUDE.md'), logger);
 
-  // 5. Download PERSONA.md → /workspace/persona/PERSONA.md (read-only)
-  if (paths.personaFile) {
-    await downloadFile(s3, bucket, paths.personaFile, join(WORKSPACE_BASE, 'persona', 'PERSONA.md'), logger);
+  // 5. Download IDENTITY.md → /workspace/identity/IDENTITY.md
+  if (paths.identityFile) {
+    await downloadFile(s3, bucket, paths.identityFile, join(WORKSPACE_BASE, 'identity', 'IDENTITY.md'), logger);
   }
 
-  // 6. Download BOOTSTRAP.md → /workspace/persona/BOOTSTRAP.md (read-only)
+  // 6. Download SOUL.md → /workspace/identity/SOUL.md
+  if (paths.soulFile) {
+    await downloadFile(s3, bucket, paths.soulFile, join(WORKSPACE_BASE, 'identity', 'SOUL.md'), logger);
+  }
+
+  // 7. Download BOOTSTRAP.md → /workspace/identity/BOOTSTRAP.md
   if (paths.bootstrapFile) {
-    await downloadFile(s3, bucket, paths.bootstrapFile, join(WORKSPACE_BASE, 'persona', 'BOOTSTRAP.md'), logger);
+    await downloadFile(s3, bucket, paths.bootstrapFile, join(WORKSPACE_BASE, 'identity', 'BOOTSTRAP.md'), logger);
   }
 
   // 7. Download USER.md → /workspace/group/USER.md (read-only)
@@ -95,11 +103,44 @@ export async function syncToS3(
   const conversationsDir = join(WORKSPACE_BASE, 'group', 'conversations');
   const conversationsPrefix = paths.groupMemory.replace(/CLAUDE\.md$/, 'conversations/');
   await uploadDirectory(s3, bucket, conversationsDir, conversationsPrefix, logger);
+
+  // 4. Sync context files (IDENTITY.md, SOUL.md, BOOTSTRAP.md, USER.md)
+  //    Upload if they exist locally; delete from S3 if removed by Agent.
+  const contextFiles: { localPath: string; s3Key?: string }[] = [
+    { localPath: join(WORKSPACE_BASE, 'identity', 'IDENTITY.md'), s3Key: paths.identityFile },
+    { localPath: join(WORKSPACE_BASE, 'identity', 'SOUL.md'), s3Key: paths.soulFile },
+    { localPath: join(WORKSPACE_BASE, 'identity', 'BOOTSTRAP.md'), s3Key: paths.bootstrapFile },
+    { localPath: join(WORKSPACE_BASE, 'group', 'USER.md'), s3Key: paths.userFile },
+  ];
+
+  for (const { localPath, s3Key } of contextFiles) {
+    if (!s3Key) continue;
+    if (existsSync(localPath)) {
+      await uploadFile(s3, bucket, localPath, s3Key, logger);
+    } else {
+      // File was deleted by Agent (e.g., BOOTSTRAP.md after bootstrap) → remove from S3
+      await deleteS3Object(s3, bucket, s3Key, logger);
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
+
+async function deleteS3Object(
+  s3: S3Client,
+  bucket: string,
+  key: string,
+  logger: pino.Logger,
+): Promise<void> {
+  try {
+    await s3.send(new DeleteObjectCommand({ Bucket: bucket, Key: key }));
+    logger.debug({ key }, 'Deleted S3 object');
+  } catch {
+    // Best effort — object may not exist
+  }
+}
 
 async function downloadFile(
   s3: S3Client,

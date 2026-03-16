@@ -21,7 +21,8 @@
 import type { ChannelType } from '@clawbot/shared';
 import {
   loadMemoryLayers,
-  loadPersonaFile,
+  loadIdentityFile,
+  loadSoulFile,
   loadBootstrapFile,
   loadUserFile,
   truncateContent,
@@ -57,31 +58,35 @@ export async function buildSystemPrompt(
   // 1. Identity
   sections.push(buildIdentitySection(opts.botName));
 
-  // 2. Persona (PERSONA.md or Bot.systemPrompt)
-  const persona = await buildPersonaSection(opts.systemPrompt, config);
-  if (persona) sections.push(persona);
+  // 2. Identity Context (IDENTITY.md or Bot.systemPrompt fallback)
+  const identityCtx = await buildIdentityContextSection(opts.systemPrompt, config);
+  if (identityCtx) sections.push(identityCtx);
 
-  // 3. Bootstrap (new sessions only)
+  // 3. Soul (SOUL.md)
+  const soul = await buildSoulSection(config);
+  if (soul) sections.push(soul);
+
+  // 4. Bootstrap (new sessions only)
   if (opts.isNewSession) {
     const bootstrap = await buildBootstrapSection(config);
     if (bootstrap) sections.push(bootstrap);
   }
 
-  // 4. Channel guidance
+  // 5. Channel guidance
   sections.push(buildChannelGuidance(opts.channelType));
 
-  // 5. Reply guidelines
+  // 6. Reply guidelines
   sections.push(buildReplyGuidelines(opts.isScheduledTask));
 
-  // 6. User context (USER.md)
+  // 7. User context (USER.md)
   const userCtx = await buildUserContextSection(config);
   if (userCtx) sections.push(userCtx);
 
-  // 7. Memory layers (with token budgeting)
+  // 8. Memory layers (with token budgeting)
   const memory = await buildMemorySection(config);
   if (memory) sections.push(memory);
 
-  // 8. Runtime metadata
+  // 9. Runtime metadata
   sections.push(buildRuntimeMetadata(opts));
 
   return sections.join('\n\n---\n\n');
@@ -93,25 +98,37 @@ function buildIdentitySection(botName: string): string {
   return `# Identity\nYou are ${botName}, a personal AI assistant.`;
 }
 
-// ── Section 2: Persona ────────────────────────────────────────────────────
+// ── Section 2: Identity Context ───────────────────────────────────────────
 
-async function buildPersonaSection(
+async function buildIdentityContextSection(
   botSystemPrompt?: string,
   config?: TruncationConfig,
 ): Promise<string | null> {
-  // Try PERSONA.md first
-  let persona = await loadPersonaFile();
-  if (persona) {
-    if (config) persona = truncateContent(persona, config.perFileCap, config);
-    return `# Persona\nEmbody this persona in all your interactions — adopt its identity, tone, and style:\n\n${persona}`;
+  // Try IDENTITY.md first
+  let identity = await loadIdentityFile();
+  if (identity) {
+    if (config) identity = truncateContent(identity, config.perFileCap, config);
+    return `# About You\n${identity}`;
   }
 
-  // Fall back to Bot.systemPrompt field
+  // Fall back to Bot.systemPrompt field (backward compat)
   if (botSystemPrompt) {
-    return `# Persona\n${botSystemPrompt}`;
+    return `# About You\n${botSystemPrompt}`;
   }
 
   return null;
+}
+
+// ── Section 3: Soul ───────────────────────────────────────────────────────
+
+async function buildSoulSection(
+  config?: TruncationConfig,
+): Promise<string | null> {
+  let soul = await loadSoulFile();
+  if (!soul) return null;
+
+  if (config) soul = truncateContent(soul, config.perFileCap, config);
+  return `# Your Soul\nThese are your core values and behavioral guidelines:\n\n${soul}`;
 }
 
 // ── Section 3: Bootstrap ──────────────────────────────────────────────────

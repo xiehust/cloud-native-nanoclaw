@@ -7,7 +7,8 @@ vi.mock('../memory.js', async (importOriginal) => {
   const actual = await importOriginal<typeof memoryModule>();
   return {
     ...actual,
-    loadPersonaFile: vi.fn().mockResolvedValue(null),
+    loadIdentityFile: vi.fn().mockResolvedValue(null),
+    loadSoulFile: vi.fn().mockResolvedValue(null),
     loadBootstrapFile: vi.fn().mockResolvedValue(null),
     loadUserFile: vi.fn().mockResolvedValue(null),
     loadMemoryLayers: vi.fn().mockResolvedValue({ layers: [], totalChars: 0 }),
@@ -24,7 +25,8 @@ const baseOpts: SystemPromptOptions = {
 
 describe('buildSystemPrompt', () => {
   beforeEach(() => {
-    vi.mocked(memoryModule.loadPersonaFile).mockResolvedValue(null);
+    vi.mocked(memoryModule.loadIdentityFile).mockResolvedValue(null);
+    vi.mocked(memoryModule.loadSoulFile).mockResolvedValue(null);
     vi.mocked(memoryModule.loadBootstrapFile).mockResolvedValue(null);
     vi.mocked(memoryModule.loadUserFile).mockResolvedValue(null);
     vi.mocked(memoryModule.loadMemoryLayers).mockResolvedValue({ layers: [], totalChars: 0 });
@@ -42,40 +44,54 @@ describe('buildSystemPrompt', () => {
     expect(result).toContain('You are TestBot');
   });
 
-  // ── Section 2: Persona ──────────────────────────────────────────────
+  // ── Section 2: Identity Context ─────────────────────────────────────
 
-  it('includes PERSONA.md when available', async () => {
-    vi.mocked(memoryModule.loadPersonaFile).mockResolvedValue('I am Luna, a friendly assistant.');
+  it('includes IDENTITY.md when available', async () => {
+    vi.mocked(memoryModule.loadIdentityFile).mockResolvedValue('Name: Luna\nCreature: AI assistant');
 
     const result = await buildSystemPrompt(baseOpts);
-    expect(result).toContain('# Persona');
-    expect(result).toContain('I am Luna, a friendly assistant.');
-    expect(result).toContain('Embody this persona');
+    expect(result).toContain('# About You');
+    expect(result).toContain('Name: Luna');
   });
 
-  it('falls back to Bot.systemPrompt when no PERSONA.md', async () => {
+  it('falls back to Bot.systemPrompt when no IDENTITY.md', async () => {
     const result = await buildSystemPrompt({
       ...baseOpts,
       systemPrompt: 'You are a helpful coding assistant.',
     });
-    expect(result).toContain('# Persona');
+    expect(result).toContain('# About You');
     expect(result).toContain('You are a helpful coding assistant.');
   });
 
-  it('prefers PERSONA.md over Bot.systemPrompt', async () => {
-    vi.mocked(memoryModule.loadPersonaFile).mockResolvedValue('Persona from file');
+  it('prefers IDENTITY.md over Bot.systemPrompt', async () => {
+    vi.mocked(memoryModule.loadIdentityFile).mockResolvedValue('Identity from file');
 
     const result = await buildSystemPrompt({
       ...baseOpts,
       systemPrompt: 'Prompt from bot record',
     });
-    expect(result).toContain('Persona from file');
+    expect(result).toContain('Identity from file');
     expect(result).not.toContain('Prompt from bot record');
   });
 
-  it('skips persona section when neither PERSONA.md nor systemPrompt', async () => {
+  it('skips identity section when neither IDENTITY.md nor systemPrompt', async () => {
     const result = await buildSystemPrompt(baseOpts);
-    expect(result).not.toContain('# Persona');
+    expect(result).not.toContain('# About You');
+  });
+
+  // ── Section 3: Soul ────────────────────────────────────────────────
+
+  it('includes SOUL.md when available', async () => {
+    vi.mocked(memoryModule.loadSoulFile).mockResolvedValue('Be genuinely helpful. Have opinions.');
+
+    const result = await buildSystemPrompt(baseOpts);
+    expect(result).toContain('# Your Soul');
+    expect(result).toContain('Be genuinely helpful');
+  });
+
+  it('skips soul section when no SOUL.md', async () => {
+    const result = await buildSystemPrompt(baseOpts);
+    expect(result).not.toContain('# Your Soul');
   });
 
   // ── Section 3: Bootstrap ────────────────────────────────────────────
@@ -197,7 +213,8 @@ describe('buildSystemPrompt', () => {
   // ── Section ordering ────────────────────────────────────────────────
 
   it('sections appear in correct order', async () => {
-    vi.mocked(memoryModule.loadPersonaFile).mockResolvedValue('persona content');
+    vi.mocked(memoryModule.loadIdentityFile).mockResolvedValue('identity content');
+    vi.mocked(memoryModule.loadSoulFile).mockResolvedValue('soul content');
     vi.mocked(memoryModule.loadBootstrapFile).mockResolvedValue('bootstrap content');
     vi.mocked(memoryModule.loadUserFile).mockResolvedValue('user content');
     vi.mocked(memoryModule.loadMemoryLayers).mockResolvedValue({
@@ -208,7 +225,8 @@ describe('buildSystemPrompt', () => {
     const result = await buildSystemPrompt({ ...baseOpts, isNewSession: true });
 
     const identityIdx = result.indexOf('# Identity');
-    const personaIdx = result.indexOf('# Persona');
+    const aboutYouIdx = result.indexOf('# About You');
+    const soulIdx = result.indexOf('# Your Soul');
     const bootstrapIdx = result.indexOf('# First Session');
     const channelIdx = result.indexOf('# Channel:');
     const replyIdx = result.indexOf('# Reply Guidelines');
@@ -216,8 +234,9 @@ describe('buildSystemPrompt', () => {
     const memoryIdx = result.indexOf('# Shared Memory');
     const runtimeIdx = result.indexOf('Runtime:');
 
-    expect(identityIdx).toBeLessThan(personaIdx);
-    expect(personaIdx).toBeLessThan(bootstrapIdx);
+    expect(identityIdx).toBeLessThan(aboutYouIdx);
+    expect(aboutYouIdx).toBeLessThan(soulIdx);
+    expect(soulIdx).toBeLessThan(bootstrapIdx);
     expect(bootstrapIdx).toBeLessThan(channelIdx);
     expect(channelIdx).toBeLessThan(replyIdx);
     expect(replyIdx).toBeLessThan(userIdx);

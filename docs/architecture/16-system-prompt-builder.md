@@ -26,8 +26,9 @@ S3 存储结构:
 ├── shared/
 │   └── CLAUDE.md                 ← 用户级：跨 Bot 共享记忆 (read-only)
 └── {botId}/
-    ├── PERSONA.md                ← Bot 级：身份 + 语气 (read-only)
-    ├── BOOTSTRAP.md              ← Bot 级：新会话首次指令 (read-only)
+    ├── IDENTITY.md               ← Bot 级：身份定义 (read-write by Agent)
+    ├── SOUL.md                   ← Bot 级：价值观和行为准则 (read-write by Agent)
+    ├── BOOTSTRAP.md              ← Bot 级：新会话首次指令 (Agent 完成后删除)
     └── memory/
         ├── global/
         │   └── CLAUDE.md         ← Bot 级：持久记忆 (read-only)
@@ -38,8 +39,9 @@ S3 存储结构:
 
 | 文件 | 层级 | 读写 | 用途 | 类比 OpenClaw |
 |------|------|------|------|--------------|
-| `PERSONA.md` | Bot | 只读 | 身份定义 + 语气风格 | IDENTITY.md + SOUL.md |
-| `BOOTSTRAP.md` | Bot | 只读 | 新会话首次指令（仅首次注入） | BOOTSTRAP.md |
+| `IDENTITY.md` | Bot | 读写 | 身份定义（名字、角色、性格） | IDENTITY.md |
+| `SOUL.md` | Bot | 读写 | 价值观和行为准则 | SOUL.md |
+| `BOOTSTRAP.md` | Bot | 读写 | 首次对话引导（Agent 完成后自行删除） | BOOTSTRAP.md |
 | `USER.md` | Group | 只读 | 关于对话中的人类用户 | USER.md |
 | `CLAUDE.md` (shared) | User | 只读 | 跨 Bot 共享知识 | — |
 | `CLAUDE.md` (global) | Bot | 只读 | Bot 级持久记忆 | MEMORY.md |
@@ -68,8 +70,9 @@ S3 存储结构:
     │              8 Sections (in order)             │
     │                                               │
     │  1. Identity      ← botName                   │
-    │  2. Persona       ← PERSONA.md / systemPrompt │
-    │  3. Bootstrap     ← BOOTSTRAP.md (new only)   │
+    │  2. About You     ← IDENTITY.md / systemPrompt│
+    │  3. Your Soul     ← SOUL.md                   │
+    │  4. Bootstrap     ← BOOTSTRAP.md (new only)   │
     │  4. Channel       ← channelType               │
     │  5. Reply Guide   ← isScheduledTask           │
     │  6. User Context  ← USER.md                   │
@@ -100,18 +103,27 @@ You are {botName}, a personal AI assistant.
 
 始终存在。为 Agent 建立基本身份。
 
-### Section 2: Persona
+### Section 2: Identity Context
 
 ```
-# Persona
-Embody this persona in all your interactions — adopt its identity, tone, and style:
-
-{PERSONA.md 内容}
+# About You
+{IDENTITY.md 内容}
 ```
 
-**优先级：** PERSONA.md > Bot.systemPrompt > 跳过
+**优先级：** IDENTITY.md > Bot.systemPrompt > 跳过
 
-PERSONA.md 是独立文件，支持长篇人设定义（如角色背景、知识领域、禁忌话题等）。当 PERSONA.md 不存在时，回退到 Bot 记录中的 `systemPrompt` 字段。两者都没有则跳过此 section。
+IDENTITY.md 定义 Agent 的身份：名字、角色、性格、专长。由 Agent 在首次对话中通过 BOOTSTRAP 流程自主创建。当 IDENTITY.md 不存在时，回退到 Bot 记录中的 `systemPrompt` 字段。
+
+### Section 3: Soul
+
+```
+# Your Soul
+These are your core values and behavioral guidelines:
+
+{SOUL.md 内容}
+```
+
+SOUL.md 定义 Agent 的价值观、沟通风格、边界。如不存在则跳过。
 
 ### Section 3: Bootstrap
 
@@ -283,8 +295,9 @@ systemPrompt: {
    ├─ detectExistingSession(): 判断 isNewSession
    │
    ├─ buildSystemPrompt():
-   │    ├─ loadPersonaFile()     → /workspace/persona/PERSONA.md
-   │    ├─ loadBootstrapFile()   → /workspace/persona/BOOTSTRAP.md (if new)
+   │    ├─ loadIdentityFile()    → /workspace/identity/IDENTITY.md
+   │    ├─ loadSoulFile()        → /workspace/identity/SOUL.md
+   │    ├─ loadBootstrapFile()   → /workspace/identity/BOOTSTRAP.md (if new)
    │    ├─ loadUserFile()        → /workspace/group/USER.md
    │    ├─ loadMemoryLayers()    → 3× CLAUDE.md with truncation
    │    └─ assemble 8 sections   → joined string
@@ -303,7 +316,8 @@ systemPrompt: {
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| GET/PUT | `/bots/:botId/persona` | PERSONA.md (Bot 身份+语气) |
+| GET/PUT | `/bots/:botId/identity` | IDENTITY.md (Bot 身份) |
+| GET/PUT | `/bots/:botId/soul` | SOUL.md (Bot 价值观) |
 | GET/PUT | `/bots/:botId/bootstrap` | BOOTSTRAP.md (新会话指令) |
 | GET/PUT | `/bots/:botId/groups/:gid/user-context` | USER.md (关于用户) |
 | GET/PUT | `/bots/:botId/memory` | Bot Global CLAUDE.md |
@@ -315,7 +329,7 @@ systemPrompt: {
 6 个标签页，通过 `?tab=` 查询参数切换：
 
 ```
-[Shared] [Persona] [Bootstrap] [Bot Memory] [Group Memory] [User Context]
+[Shared] [Identity] [Soul] [Bootstrap] [Bot Memory] [Group Memory] [User Context]
 ```
 
 - Bot 级标签（Persona, Bootstrap, Bot Memory）：在 `/bots/:botId/memory` 路径下显示

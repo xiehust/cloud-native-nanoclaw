@@ -36,7 +36,7 @@ const SESSION_BUCKET = process.env.SESSION_BUCKET || '';
 let currentSessionKey: string | undefined;
 
 async function cleanLocalWorkspace(): Promise<void> {
-  for (const dir of ['/workspace/group', '/workspace/global', '/workspace/shared', '/workspace/persona', '/home/node/.claude']) {
+  for (const dir of ['/workspace/group', '/workspace/global', '/workspace/shared', '/workspace/identity', '/home/node/.claude']) {
     try { rmSync(dir, { recursive: true, force: true }); } catch { /* ignore */ }
     try { mkdirSync(dir, { recursive: true }); } catch { /* ignore */ }
   }
@@ -89,7 +89,8 @@ async function _handleInvocation(
     groupMemory: memoryPaths.group,
     botGlobalMemory: memoryPaths.botGlobal,
     sharedMemory: memoryPaths.shared,
-    personaFile: memoryPaths.persona,
+    identityFile: memoryPaths.identity,
+    soulFile: memoryPaths.soul,
     bootstrapFile: memoryPaths.bootstrap,
     userFile: memoryPaths.user,
   };
@@ -97,7 +98,19 @@ async function _handleInvocation(
   logger.info({ sessionPath, groupJid }, 'Syncing session from S3');
   await syncFromS3(s3, SESSION_BUCKET, syncPaths, logger);
 
-  // 3. Detect existing session (needed for bootstrap injection decision)
+  // 3. Copy default templates if identity not yet established
+  const TEMPLATES = '/app/templates';
+  if (!fs.existsSync('/workspace/identity/IDENTITY.md')) {
+    copyIfMissing(TEMPLATES, 'BOOTSTRAP.md', '/workspace/identity');
+    copyIfMissing(TEMPLATES, 'IDENTITY.md', '/workspace/identity');
+    copyIfMissing(TEMPLATES, 'SOUL.md', '/workspace/identity');
+    logger.info('Default identity templates copied (first-run bootstrap)');
+  }
+  if (!fs.existsSync('/workspace/group/USER.md')) {
+    copyIfMissing(TEMPLATES, 'USER.md', '/workspace/group');
+  }
+
+  // 4. Detect existing session (needed for bootstrap injection decision)
   const existingSessionId = detectExistingSession();
   const isNewSession = !existingSessionId;
 
@@ -566,4 +579,21 @@ function sanitizeFilename(summary: string): string {
 function generateFallbackName(): string {
   const time = new Date();
   return `conversation-${time.getHours().toString().padStart(2, '0')}${time.getMinutes().toString().padStart(2, '0')}`;
+}
+
+// ---------------------------------------------------------------------------
+// Template copy helper
+// ---------------------------------------------------------------------------
+
+function copyIfMissing(templateDir: string, fileName: string, destDir: string): void {
+  const src = path.join(templateDir, fileName);
+  const dest = path.join(destDir, fileName);
+  try {
+    if (!fs.existsSync(dest) && fs.existsSync(src)) {
+      fs.mkdirSync(destDir, { recursive: true });
+      fs.copyFileSync(src, dest);
+    }
+  } catch {
+    // Non-fatal — templates are a nice-to-have
+  }
 }

@@ -120,14 +120,19 @@ export async function loadMemoryLayers(
 
 // ── Context File Loaders ──────────────────────────────────────────────────
 
-/** Load PERSONA.md (bot-level identity + tone) */
-export async function loadPersonaFile(): Promise<string | null> {
-  return safeReadFile(join(WORKSPACE_BASE, 'persona', 'PERSONA.md'));
+/** Load IDENTITY.md (bot-level, who am I) */
+export async function loadIdentityFile(): Promise<string | null> {
+  return safeReadFile(join(WORKSPACE_BASE, 'identity', 'IDENTITY.md'));
+}
+
+/** Load SOUL.md (bot-level, values and behavior) */
+export async function loadSoulFile(): Promise<string | null> {
+  return safeReadFile(join(WORKSPACE_BASE, 'identity', 'SOUL.md'));
 }
 
 /** Load BOOTSTRAP.md (bot-level, new-session-only instructions) */
 export async function loadBootstrapFile(): Promise<string | null> {
-  return safeReadFile(join(WORKSPACE_BASE, 'persona', 'BOOTSTRAP.md'));
+  return safeReadFile(join(WORKSPACE_BASE, 'identity', 'BOOTSTRAP.md'));
 }
 
 /** Load USER.md (group-level, about the humans in this conversation) */
