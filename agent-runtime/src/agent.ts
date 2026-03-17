@@ -13,7 +13,7 @@
  * Preserves NanoClaw patterns:
  *   - Claude Agent SDK query() with same tool allowlist
  *   - MCP server for clawbot tools (send_message, schedule_task, etc.)
- *   - Multi-layer CLAUDE.md memory (shared → bot global → group)
+ *   - Native CLAUDE.md memory (bot-level ~/.claude/ + group-level /workspace/group/)
  *   - Pre-compact hook for conversation archiving
  *   - Session resumption via sessionId
  */
@@ -22,11 +22,10 @@ import fs, { rmSync, mkdirSync } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { query, type HookCallback, type PreCompactHookInput } from '@anthropic-ai/claude-agent-sdk';
-import { S3Client } from '@aws-sdk/client-s3';
 import type pino from 'pino';
 import type { InvocationPayload, InvocationResult } from '@clawbot/shared';
 import { syncFromS3, syncToS3, type SyncPaths } from './session.js';
-import { buildSystemPrompt } from './system-prompt.js';
+import { buildAppendContent } from './system-prompt.js';
 import { getScopedClients } from './scoped-credentials.js';
 import { setBusy, setIdle } from './server.js';
 
@@ -37,7 +36,7 @@ const DEFAULT_MODEL = 'global.anthropic.claude-sonnet-4-6';
 let currentSessionKey: string | undefined;
 
 async function cleanLocalWorkspace(): Promise<void> {
-  for (const dir of ['/workspace/group', '/workspace/global', '/workspace/shared', '/workspace/identity', '/workspace/reference', '/workspace/learnings', '/home/node/.claude']) {
+  for (const dir of ['/workspace/group', '/workspace/learnings', '/workspace/reference', '/home/node/.claude']) {
     try { rmSync(dir, { recursive: true, force: true }); } catch { /* ignore */ }
     try { mkdirSync(dir, { recursive: true }); } catch { /* ignore */ }
   }
@@ -87,81 +86,64 @@ async function _handleInvocation(
   // 2. Sync session and memory from S3 → local workspace
   const syncPaths: SyncPaths = {
     sessionPath,
-    groupMemory: memoryPaths.group,
-    botGlobalMemory: memoryPaths.botGlobal,
-    sharedMemory: memoryPaths.shared,
-    identityFile: memoryPaths.identity,
-    soulFile: memoryPaths.soul,
-    bootstrapFile: memoryPaths.bootstrap,
-    userFile: memoryPaths.user,
+    botClaude: memoryPaths.botClaude,
+    groupClaude: memoryPaths.groupClaude,
     learningsPrefix: memoryPaths.learnings,
   };
 
   logger.info({ sessionPath, groupJid }, 'Syncing session from S3');
   await syncFromS3(s3, SESSION_BUCKET, syncPaths, logger);
 
-  // 3. Copy default templates if identity not yet established
+  // 3. Copy bot operating manual to ~/.claude/CLAUDE.md if not present (first run)
   const TEMPLATES = '/app/templates';
-  if (!fs.existsSync('/workspace/identity/IDENTITY.md')) {
-    copyIfMissing(TEMPLATES, 'BOOTSTRAP.md', '/workspace/identity');
-    copyIfMissing(TEMPLATES, 'IDENTITY.md', '/workspace/identity');
-    copyIfMissing(TEMPLATES, 'SOUL.md', '/workspace/identity');
-    logger.info('Default identity templates copied (first-run bootstrap)');
-  }
-  if (!fs.existsSync('/workspace/shared/USER.md')) {
-    copyIfMissing(TEMPLATES, 'USER.md', '/workspace/shared');
-  }
-  // Copy bot operating manual to global CLAUDE.md if not present
-  if (!fs.existsSync('/workspace/global/CLAUDE.md')) {
-    const botClaudeSrc = path.join(TEMPLATES, 'BOT_CLAUDE.md');
-    if (fs.existsSync(botClaudeSrc)) {
-      fs.copyFileSync(botClaudeSrc, '/workspace/global/CLAUDE.md');
-      logger.info('Default BOT_CLAUDE.md copied to /workspace/global/CLAUDE.md');
+  const BOT_CLAUDE_LOCAL = '/home/node/.claude/CLAUDE.md';
+  if (!fs.existsSync(BOT_CLAUDE_LOCAL)) {
+    const src = path.join(TEMPLATES, 'BOT_CLAUDE.md');
+    if (fs.existsSync(src)) {
+      fs.copyFileSync(src, BOT_CLAUDE_LOCAL);
+      logger.info('Default BOT_CLAUDE.md copied to ~/.claude/CLAUDE.md (first run)');
     }
   }
-  // Always ensure reference files are available for on-demand loading
+  // Ensure reference files available
   copyIfMissing(TEMPLATES, 'CODING_REFERENCE.md', '/workspace/reference');
 
-  // 4. Detect existing session (needed for bootstrap injection decision)
+  // 4. Detect existing session (for resume)
   const existingSessionId = detectExistingSession();
-  const isNewSession = !existingSessionId;
 
-  // 4. Build structured system prompt (identity, soul, channel, memory, etc.)
-  const systemPromptContent = await buildSystemPrompt({
+  // 5. Build append content (managed policy + identity + channel + runtime)
+  const appendContent = buildAppendContent({
     botId,
     botName,
     channelType: payload.channelType,
     groupJid,
-    systemPrompt: payload.systemPrompt,
-    isScheduledTask: payload.isScheduledTask,
-    isNewSession,
     model: payload.model,
+    isScheduledTask: payload.isScheduledTask,
   });
   logger.info(
-    { systemPromptLength: systemPromptContent.length, isNewSession },
-    'System prompt built',
+    { appendContentLength: appendContent.length },
+    'Append content built',
   );
 
   const agentPrompt = prompt;
 
-  // 5. Build environment for Claude Agent SDK
+  // 6. Build environment for Claude Agent SDK
   //    CLAUDE_CODE_USE_BEDROCK=1 is set in the container env, but ensure it's passed through
   const sdkEnv: Record<string, string | undefined> = {
     ...process.env,
     CLAUDE_CODE_USE_BEDROCK: '1',
   };
 
-  // 6. Resolve MCP server path (mcp-server.js in same dist directory)
+  // 7. Resolve MCP server path (mcp-server.js in same dist directory)
   const mcpServerPath = path.join(__dirname, 'mcp-server.js');
 
-  // 7. Run Claude Agent SDK query
+  // 8. Run Claude Agent SDK query
   logger.info({ sessionId: existingSessionId || 'new' }, 'Starting agent query');
   const result = await runAgentQuery({
     prompt: agentPrompt,
     sessionId: existingSessionId,
     mcpServerPath,
     sdkEnv,
-    systemPromptContent,
+    appendContent,
     botId,
     botName,
     groupJid,
@@ -174,7 +156,7 @@ async function _handleInvocation(
   // Debug: collect file listing to return in response
   const { readdirSync, existsSync } = await import('fs');
   const debugFiles: Record<string, string[]> = {};
-  for (const dir of ['/home/node/.claude', '/workspace/group', '/workspace/global', '/workspace/shared']) {
+  for (const dir of ['/home/node/.claude', '/workspace/group', '/workspace/learnings']) {
     if (existsSync(dir)) {
       try {
         debugFiles[dir] = readdirSync(dir, { recursive: true, withFileTypes: true })
@@ -209,7 +191,7 @@ interface QueryParams {
   sessionId: string | undefined;
   mcpServerPath: string;
   sdkEnv: Record<string, string | undefined>;
-  systemPromptContent: string;
+  appendContent: string;
   botId: string;
   botName: string;
   groupJid: string;
@@ -219,7 +201,7 @@ interface QueryParams {
 }
 
 async function runAgentQuery(params: QueryParams): Promise<InvocationResult> {
-  const { prompt, sessionId, mcpServerPath, sdkEnv, systemPromptContent, payload, logger } = params;
+  const { prompt, sessionId, mcpServerPath, sdkEnv, appendContent, payload, logger } = params;
 
   let newSessionId: string | undefined;
   let lastResult: string | null = null;
@@ -251,7 +233,11 @@ async function runAgentQuery(params: QueryParams): Promise<InvocationResult> {
         cwd: '/workspace/group',
         additionalDirectories: extraDirs.length > 0 ? extraDirs : undefined,
         resume: sessionId,
-        systemPrompt: systemPromptContent || undefined,
+        systemPrompt: {
+          type: 'preset' as const,
+          preset: 'claude_code' as const,
+          append: appendContent,
+        },
         // Same tool allowlist as NanoClaw's agent-runner
         allowedTools: [
           'Bash',
@@ -277,7 +263,7 @@ async function runAgentQuery(params: QueryParams): Promise<InvocationResult> {
         env: sdkEnv,
         permissionMode: 'bypassPermissions',
         allowDangerouslySkipPermissions: true,
-        settingSources: ['project', 'user'],
+        settingSources: ['user', 'project'],
         maxTurns: payload.maxTurns,
         mcpServers: {
           nanoclawbot: {
