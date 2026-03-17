@@ -84,11 +84,11 @@ COPY agent-runtime/templates/ /app/templates/
 RUN mkdir -p /etc/claude-code
 COPY agent-runtime/templates/MANAGED_CLAUDE.md /etc/claude-code/CLAUDE.md
 
-# Pre-bundled skills → /home/node/.claude/skills/
-COPY agent-runtime/skills/ /home/node/.claude/skills/
-
-# Workspace directories (mirrors NanoClaw's /workspace layout)
+# Workspace directories
 RUN mkdir -p /workspace/group /workspace/learnings /workspace/reference /workspace/extra /home/node/.claude
+
+# Pre-bundled skills
+COPY agent-runtime/skills/ /home/node/.claude/skills/
 
 # Set ownership to non-root user
 RUN chown -R node:node /workspace /home/node/.claude /home/node
