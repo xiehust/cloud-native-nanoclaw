@@ -111,6 +111,14 @@ async function _handleInvocation(
   if (!fs.existsSync('/workspace/shared/USER.md')) {
     copyIfMissing(TEMPLATES, 'USER.md', '/workspace/shared');
   }
+  // Copy bot operating manual to global CLAUDE.md if not present
+  if (!fs.existsSync('/workspace/global/CLAUDE.md')) {
+    const botClaudeSrc = path.join(TEMPLATES, 'BOT_CLAUDE.md');
+    if (fs.existsSync(botClaudeSrc)) {
+      fs.copyFileSync(botClaudeSrc, '/workspace/global/CLAUDE.md');
+      logger.info('Default BOT_CLAUDE.md copied to /workspace/global/CLAUDE.md');
+    }
+  }
   // Always ensure reference files are available for on-demand loading
   copyIfMissing(TEMPLATES, 'CODING_REFERENCE.md', '/workspace/reference');
   copyIfMissing(TEMPLATES, 'SELF_IMPROVEMENT.md', '/workspace/reference');
