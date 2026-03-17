@@ -76,7 +76,7 @@ COPY --from=builder /app/shared/dist/ ./node_modules/@clawbot/shared/dist/
 COPY --from=builder /app/shared/package.json ./node_modules/@clawbot/shared/
 COPY --from=builder /app/agent-runtime/package.json ./
 
-# Default context templates (BOT_CLAUDE.md, system-prompt-base.md, etc.)
+# Default context templates (BOT_CLAUDE.md, MANAGED_CLAUDE.md, CODING_REFERENCE.md)
 COPY agent-runtime/templates/ /app/templates/
 
 # Organization-level managed policy (read-only, injected into append content)

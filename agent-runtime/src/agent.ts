@@ -153,21 +153,6 @@ async function _handleInvocation(
   });
 
   // 9. Sync session and memory back to S3
-  // Debug: collect file listing to return in response
-  const { readdirSync, existsSync } = await import('fs');
-  const debugFiles: Record<string, string[]> = {};
-  for (const dir of ['/home/node/.claude', '/workspace/group', '/workspace/learnings']) {
-    if (existsSync(dir)) {
-      try {
-        debugFiles[dir] = readdirSync(dir, { recursive: true, withFileTypes: true })
-          .filter((e: { isFile: () => boolean }) => e.isFile())
-          .map((e: { parentPath?: string; path?: string; name: string }) => `${(e.parentPath || e.path)}/${e.name}`);
-      } catch { debugFiles[dir] = ['(read error)']; }
-    } else {
-      debugFiles[dir] = ['(not exist)'];
-    }
-  }
-
   logger.info('Syncing session back to S3');
   await syncToS3(s3, SESSION_BUCKET, syncPaths, logger);
 
@@ -175,9 +160,6 @@ async function _handleInvocation(
     { status: result.status, sessionId: result.newSessionId },
     'Invocation complete',
   );
-
-  // Attach debug info to result temporarily
-  (result as unknown as Record<string, unknown>)._debugFiles = debugFiles;
 
   return result;
 }
