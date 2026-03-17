@@ -5,11 +5,10 @@
  *   Before invocation → download session + memory files from S3
  *   After invocation  → upload changed files back to S3
  *
- * Layout mirrors NanoClaw's /workspace:
- *   /home/node/.claude/   ← Claude Code session state (conversations, settings)
- *   /workspace/group/     ← Group memory + conversations (read-write)
- *   /workspace/global/    ← Bot-wide memory (read-only at runtime)
- *   /workspace/shared/    ← User-shared memory (read-only at runtime)
+ * Layout:
+ *   /home/node/.claude/           ← Claude Code session state + bot-level CLAUDE.md
+ *   /workspace/group/             ← Group memory (CLAUDE.md) + conversations
+ *   /workspace/learnings/         ← Learning journal
  */
 
 import { S3Client, GetObjectCommand, PutObjectCommand, DeleteObjectCommand, ListObjectsV2Command } from '@aws-sdk/client-s3';
@@ -22,23 +21,13 @@ const WORKSPACE_BASE = '/workspace';
 const CLAUDE_DIR = '/home/node/.claude';
 
 export interface SyncPaths {
-  /** S3 prefix for Claude Code session files (conversations, etc.) */
+  /** S3 prefix for Claude Code session files */
   sessionPath: string;
-  /** S3 key for group CLAUDE.md (read-write) */
-  groupMemory: string;
-  /** S3 key for bot global CLAUDE.md (read-only) */
-  botGlobalMemory: string;
-  /** S3 key for user shared CLAUDE.md (read-only) */
-  sharedMemory: string;
-  /** S3 key for IDENTITY.md — who am I (read-write, Agent can update) */
-  identityFile?: string;
-  /** S3 key for SOUL.md — values and behavior (read-write, Agent can update) */
-  soulFile?: string;
-  /** S3 key for BOOTSTRAP.md (read-write, Agent deletes after bootstrap) */
-  bootstrapFile?: string;
-  /** S3 key for USER.md — about the human user (read-write, Agent can update) */
-  userFile?: string;
-  /** S3 prefix for learnings files (read-write) */
+  /** S3 key for bot-level CLAUDE.md → /home/node/.claude/CLAUDE.md */
+  botClaude: string;
+  /** S3 key for group CLAUDE.md → /workspace/group/CLAUDE.md */
+  groupClaude: string;
+  /** S3 prefix for learnings → /workspace/learnings/ */
   learningsPrefix?: string;
 }
 
@@ -55,36 +44,13 @@ export async function syncFromS3(
   // 1. Download session directory → /home/node/.claude/
   await downloadDirectory(s3, bucket, paths.sessionPath, CLAUDE_DIR, logger);
 
-  // 2. Download group memory → /workspace/group/CLAUDE.md (read-write)
-  await downloadFile(s3, bucket, paths.groupMemory, join(WORKSPACE_BASE, 'group', 'CLAUDE.md'), logger);
+  // 2. Download bot CLAUDE.md → /home/node/.claude/CLAUDE.md
+  await downloadFile(s3, bucket, paths.botClaude, join(CLAUDE_DIR, 'CLAUDE.md'), logger);
 
-  // 3. Download bot global memory → /workspace/global/CLAUDE.md (read-only)
-  await downloadFile(s3, bucket, paths.botGlobalMemory, join(WORKSPACE_BASE, 'global', 'CLAUDE.md'), logger);
+  // 3. Download group CLAUDE.md → /workspace/group/CLAUDE.md
+  await downloadFile(s3, bucket, paths.groupClaude, join(WORKSPACE_BASE, 'group', 'CLAUDE.md'), logger);
 
-  // 4. Download shared memory → /workspace/shared/CLAUDE.md (read-only)
-  await downloadFile(s3, bucket, paths.sharedMemory, join(WORKSPACE_BASE, 'shared', 'CLAUDE.md'), logger);
-
-  // 5. Download IDENTITY.md → /workspace/identity/IDENTITY.md
-  if (paths.identityFile) {
-    await downloadFile(s3, bucket, paths.identityFile, join(WORKSPACE_BASE, 'identity', 'IDENTITY.md'), logger);
-  }
-
-  // 6. Download SOUL.md → /workspace/identity/SOUL.md
-  if (paths.soulFile) {
-    await downloadFile(s3, bucket, paths.soulFile, join(WORKSPACE_BASE, 'identity', 'SOUL.md'), logger);
-  }
-
-  // 7. Download BOOTSTRAP.md → /workspace/identity/BOOTSTRAP.md
-  if (paths.bootstrapFile) {
-    await downloadFile(s3, bucket, paths.bootstrapFile, join(WORKSPACE_BASE, 'identity', 'BOOTSTRAP.md'), logger);
-  }
-
-  // 8. Download USER.md → /workspace/shared/USER.md (user-level)
-  if (paths.userFile) {
-    await downloadFile(s3, bucket, paths.userFile, join(WORKSPACE_BASE, 'shared', 'USER.md'), logger);
-  }
-
-  // 9. Download learnings files → /workspace/learnings/
+  // 4. Download learnings → /workspace/learnings/
   if (paths.learningsPrefix) {
     await downloadDirectory(s3, bucket, paths.learningsPrefix, join(WORKSPACE_BASE, 'learnings'), logger);
   }
@@ -103,34 +69,18 @@ export async function syncToS3(
   // 1. Upload session directory (Claude Code state)
   await uploadDirectory(s3, bucket, CLAUDE_DIR, paths.sessionPath, logger);
 
-  // 2. Upload group memory (only writable layer)
-  await uploadFile(s3, bucket, join(WORKSPACE_BASE, 'group', 'CLAUDE.md'), paths.groupMemory, logger);
+  // 2. Upload bot CLAUDE.md from /home/node/.claude/CLAUDE.md → S3
+  await uploadFile(s3, bucket, join(CLAUDE_DIR, 'CLAUDE.md'), paths.botClaude, logger);
 
-  // 3. Upload group conversations directory (archived transcripts)
+  // 3. Upload group CLAUDE.md from /workspace/group/CLAUDE.md → S3
+  await uploadFile(s3, bucket, join(WORKSPACE_BASE, 'group', 'CLAUDE.md'), paths.groupClaude, logger);
+
+  // 4. Upload group conversations directory (archived transcripts)
   const conversationsDir = join(WORKSPACE_BASE, 'group', 'conversations');
-  const conversationsPrefix = paths.groupMemory.replace(/CLAUDE\.md$/, 'conversations/');
+  const conversationsPrefix = paths.groupClaude.replace(/CLAUDE\.md$/, 'conversations/');
   await uploadDirectory(s3, bucket, conversationsDir, conversationsPrefix, logger);
 
-  // 4. Sync context files (IDENTITY.md, SOUL.md, BOOTSTRAP.md, USER.md)
-  //    Upload if they exist locally; delete from S3 if removed by Agent.
-  const contextFiles: { localPath: string; s3Key?: string }[] = [
-    { localPath: join(WORKSPACE_BASE, 'identity', 'IDENTITY.md'), s3Key: paths.identityFile },
-    { localPath: join(WORKSPACE_BASE, 'identity', 'SOUL.md'), s3Key: paths.soulFile },
-    { localPath: join(WORKSPACE_BASE, 'identity', 'BOOTSTRAP.md'), s3Key: paths.bootstrapFile },
-    { localPath: join(WORKSPACE_BASE, 'shared', 'USER.md'), s3Key: paths.userFile },
-  ];
-
-  for (const { localPath, s3Key } of contextFiles) {
-    if (!s3Key) continue;
-    if (existsSync(localPath)) {
-      await uploadFile(s3, bucket, localPath, s3Key, logger);
-    } else {
-      // File was deleted by Agent (e.g., BOOTSTRAP.md after bootstrap) → remove from S3
-      await deleteS3Object(s3, bucket, s3Key, logger);
-    }
-  }
-
-  // 5. Upload learnings files
+  // 5. Upload learnings directory
   if (paths.learningsPrefix) {
     await uploadDirectory(s3, bucket, join(WORKSPACE_BASE, 'learnings'), paths.learningsPrefix, logger);
   }

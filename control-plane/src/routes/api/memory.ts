@@ -73,7 +73,7 @@ export const memoryRoutes: FastifyPluginAsync = async (app) => {
       if (!bot) {
         return reply.status(404).send({ error: 'Bot not found' });
       }
-      const key = `${request.userId}/${botId}/memory/global/CLAUDE.md`;
+      const key = `${request.userId}/${botId}/CLAUDE.md`;
       const content = await readMemory(key);
       return { content };
     },
@@ -88,83 +88,8 @@ export const memoryRoutes: FastifyPluginAsync = async (app) => {
         return reply.status(404).send({ error: 'Bot not found' });
       }
       const { content } = putMemorySchema.parse(request.body);
-      const key = `${request.userId}/${botId}/memory/global/CLAUDE.md`;
+      const key = `${request.userId}/${botId}/CLAUDE.md`;
       await writeMemory(key, content);
-      return { content };
-    },
-  );
-
-  // ── Bot Identity (IDENTITY.md) ─────────────────────────────────────────
-
-  app.get<{ Params: { botId: string } }>(
-    '/bots/:botId/identity',
-    async (request, reply) => {
-      const { botId } = request.params;
-      const bot = await getBot(request.userId, botId);
-      if (!bot) return reply.status(404).send({ error: 'Bot not found' });
-      const key = `${request.userId}/${botId}/IDENTITY.md`;
-      return { content: await readMemory(key) };
-    },
-  );
-
-  app.put<{ Params: { botId: string } }>(
-    '/bots/:botId/identity',
-    async (request, reply) => {
-      const { botId } = request.params;
-      const bot = await getBot(request.userId, botId);
-      if (!bot) return reply.status(404).send({ error: 'Bot not found' });
-      const { content } = putMemorySchema.parse(request.body);
-      await writeMemory(`${request.userId}/${botId}/IDENTITY.md`, content);
-      return { content };
-    },
-  );
-
-  // ── Bot Soul (SOUL.md) ───────────────────────────────────────────────
-
-  app.get<{ Params: { botId: string } }>(
-    '/bots/:botId/soul',
-    async (request, reply) => {
-      const { botId } = request.params;
-      const bot = await getBot(request.userId, botId);
-      if (!bot) return reply.status(404).send({ error: 'Bot not found' });
-      const key = `${request.userId}/${botId}/SOUL.md`;
-      return { content: await readMemory(key) };
-    },
-  );
-
-  app.put<{ Params: { botId: string } }>(
-    '/bots/:botId/soul',
-    async (request, reply) => {
-      const { botId } = request.params;
-      const bot = await getBot(request.userId, botId);
-      if (!bot) return reply.status(404).send({ error: 'Bot not found' });
-      const { content } = putMemorySchema.parse(request.body);
-      await writeMemory(`${request.userId}/${botId}/SOUL.md`, content);
-      return { content };
-    },
-  );
-
-  // ── Bot Bootstrap (BOOTSTRAP.md) ─────────────────────────────────────
-
-  app.get<{ Params: { botId: string } }>(
-    '/bots/:botId/bootstrap',
-    async (request, reply) => {
-      const { botId } = request.params;
-      const bot = await getBot(request.userId, botId);
-      if (!bot) return reply.status(404).send({ error: 'Bot not found' });
-      const key = `${request.userId}/${botId}/BOOTSTRAP.md`;
-      return { content: await readMemory(key) };
-    },
-  );
-
-  app.put<{ Params: { botId: string } }>(
-    '/bots/:botId/bootstrap',
-    async (request, reply) => {
-      const { botId } = request.params;
-      const bot = await getBot(request.userId, botId);
-      if (!bot) return reply.status(404).send({ error: 'Bot not found' });
-      const { content } = putMemorySchema.parse(request.body);
-      await writeMemory(`${request.userId}/${botId}/BOOTSTRAP.md`, content);
       return { content };
     },
   );
@@ -200,16 +125,4 @@ export const memoryRoutes: FastifyPluginAsync = async (app) => {
     },
   );
 
-  // ── User Profile (USER.md — user-level, shared across all bots) ─────
-
-  app.get('/user-profile', async (request) => {
-    const key = `${request.userId}/shared/USER.md`;
-    return { content: await readMemory(key) };
-  });
-
-  app.put('/user-profile', async (request) => {
-    const { content } = putMemorySchema.parse(request.body);
-    await writeMemory(`${request.userId}/shared/USER.md`, content);
-    return { content };
-  });
 };

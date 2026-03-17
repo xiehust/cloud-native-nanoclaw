@@ -62,14 +62,14 @@ web-console (standalone — talks to control-plane via REST)
 ### Package roles
 
 - **shared** (`@clawbot/shared`) — Domain types (User, Bot, Channel, Message, Task, Session), Channel Adapter interfaces, XML formatter for agent context, text utilities. Exports via subpath exports: `@clawbot/shared/types`, `@clawbot/shared/channel-adapter`, `@clawbot/shared/xml-formatter`, `@clawbot/shared/text-utils`.
-- **control-plane** (`@clawbot/control-plane`) — Fastify HTTP server on ECS Fargate. Handles webhook ingestion (Telegram/Discord/Slack), Discord Gateway (discord.js with leader election), REST API for the web console (JWT-authed via Cognito, including admin APIs), SQS FIFO message dispatching to AgentCore, SQS reply consumption via Channel Adapter Registry, channel health checking, and memory management (IDENTITY.md/SOUL.md/BOOTSTRAP.md/USER.md).
-- **agent-runtime** (`@clawbot/agent-runtime`) — Runs inside AgentCore microVMs. Wraps Claude Agent SDK with MCP tools (send_message, schedule_task, etc.). Manages S3 session sync, multi-layer CLAUDE.md memory, and STS ABAC scoped credentials. Exposes `/invocations` and `/ping` endpoints.
+- **control-plane** (`@clawbot/control-plane`) — Fastify HTTP server on ECS Fargate. Handles webhook ingestion (Telegram/Discord/Slack), Discord Gateway (discord.js with leader election), REST API for the web console (JWT-authed via Cognito, including admin APIs), SQS FIFO message dispatching to AgentCore, SQS reply consumption via Channel Adapter Registry, channel health checking, and native CLAUDE.md memory management (bot-level + group-level).
+- **agent-runtime** (`@clawbot/agent-runtime`) — Runs inside AgentCore microVMs. Wraps Claude Agent SDK with MCP tools (send_message, schedule_task, etc.). Manages S3 session sync, native CLAUDE.md memory (via Claude Code settingSources), and STS ABAC scoped credentials. Exposes `/invocations` and `/ping` endpoints.
 - **infra** (`@clawbot/infra`) — AWS CDK (TypeScript). 6 stacks: Foundation (VPC, S3, DynamoDB, SQS, ECR), Auth (Cognito), Agent (IAM ABAC roles), ControlPlane (ALB, ECS, WAF), Frontend (CloudFront + S3), Monitoring (CloudWatch).
-- **web-console** (`@clawbot/web-console`) — React 19 SPA with Vite, TailwindCSS, AWS Amplify for Cognito auth. Pages: Login, Dashboard, BotDetail, ChannelSetup, Messages, Tasks, MemoryEditor (7-level: Shared/UserProfile/Identity/Soul/Bootstrap/BotMemory/GroupMemory), Admin UserList/UserDetail.
+- **web-console** (`@clawbot/web-console`) — React 19 SPA with Vite, TailwindCSS, AWS Amplify for Cognito auth. Pages: Login, Dashboard, BotDetail, ChannelSetup, Messages, Tasks, MemoryEditor (3 tabs: Shared/BotMemory/GroupMemory), Admin UserList/UserDetail.
 
 ### Message flow
 
-User message → Channel webhook/Gateway → Control Plane (signature verification, DynamoDB store) → SQS FIFO → SQS consumer (quota check, concurrency control) → AgentCore invocation → Claude Agent SDK `query()` (structured system prompt, 9 sections) → MCP tools → response stored in DynamoDB → Channel Adapter Registry → Channel API reply.
+User message → Channel webhook/Gateway → Control Plane (signature verification, DynamoDB store) → SQS FIFO → SQS consumer (quota check, concurrency control) → AgentCore invocation → Claude Agent SDK `query()` (preset append mode, native CLAUDE.md) → MCP tools → response stored in DynamoDB → Channel Adapter Registry → Channel API reply.
 
 Agent intermediate messages: MCP `send_message` → SQS Standard reply queue → Reply Consumer → Channel Adapter → Channel API.
 

@@ -37,13 +37,8 @@ const basePayload: InvocationPayload = {
   systemPrompt: 'You are a test bot',
   sessionPath: 'user-1/bot-1/sessions/tg:123/',
   memoryPaths: {
-    shared: 'user-1/shared/CLAUDE.md',
-    botGlobal: 'user-1/bot-1/memory/global/CLAUDE.md',
-    group: 'user-1/bot-1/memory/tg:123/CLAUDE.md',
-    identity: 'user-1/bot-1/IDENTITY.md',
-    soul: 'user-1/bot-1/SOUL.md',
-    bootstrap: 'user-1/bot-1/BOOTSTRAP.md',
-    user: 'user-1/shared/USER.md',
+    botClaude: 'user-1/bot-1/CLAUDE.md',
+    groupClaude: 'user-1/bot-1/memory/tg:123/CLAUDE.md',
     learnings: 'user-1/bot-1/learnings/',
   },
 };

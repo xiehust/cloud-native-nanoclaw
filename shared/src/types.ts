@@ -199,14 +199,12 @@ export interface InvocationPayload {
 }
 
 export interface MemoryPaths {
-  shared: string; // {userId}/shared/CLAUDE.md (read-only)
-  botGlobal: string; // {userId}/{botId}/memory/global/CLAUDE.md (read-only)
-  group: string; // {userId}/{botId}/memory/{groupJid}/CLAUDE.md (read-write)
-  identity?: string; // {userId}/{botId}/IDENTITY.md (read-only, who am I)
-  soul?: string; // {userId}/{botId}/SOUL.md (read-only, values and behavior)
-  bootstrap?: string; // {userId}/{botId}/BOOTSTRAP.md (read-only, new-session-only)
-  user?: string; // {userId}/shared/USER.md (read-only, about the human user)
-  learnings?: string; // {userId}/{botId}/learnings/
+  /** S3 key for bot-level CLAUDE.md → /home/node/.claude/CLAUDE.md */
+  botClaude: string;
+  /** S3 key for group-level CLAUDE.md → /workspace/group/CLAUDE.md */
+  groupClaude: string;
+  /** S3 prefix for learnings directory → /workspace/learnings/ */
+  learnings?: string;
 }
 
 // Evolved from NanoClaw's ContainerOutput (stdout markers)
