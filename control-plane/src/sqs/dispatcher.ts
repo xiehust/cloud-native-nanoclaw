@@ -34,6 +34,13 @@ import { getRegistry } from '../adapters/registry.js';
 import type { ReplyContext, ReplyOptions } from '@clawbot/shared/channel-adapter';
 import type { Logger } from 'pino';
 
+// ── Helpers ─────────────────────────────────────────────────────────────────
+
+/** Check if agent result is a silent NO_REPLY (nothing to send) */
+function isSilentReply(result: string | null | undefined): boolean {
+  return result?.trim() === 'NO_REPLY';
+}
+
 // ── Main dispatch entry point ───────────────────────────────────────────────
 
 export async function dispatch(
@@ -151,38 +158,42 @@ async function dispatchMessage(
 
     // 8. Store bot reply in DynamoDB
     if (result.status === 'success' && result.result) {
-      const replyText = formatOutbound(result.result);
-      if (replyText) {
-        await putMessage({
-          botId: payload.botId,
-          groupJid: payload.groupJid,
-          timestamp: new Date().toISOString(),
-          messageId: `bot-${Date.now()}`,
-          sender: bot.name,
-          senderName: bot.name,
-          content: replyText,
-          isFromMe: true,
-          isBotMessage: true,
-          channelType: payload.channelType,
-          ttl: Math.floor(Date.now() / 1000) + 90 * 24 * 3600,
-        });
+      if (isSilentReply(result.result)) {
+        logger.info({ botId: payload.botId, groupJid: payload.groupJid }, 'Agent returned NO_REPLY, skipping response');
+      } else {
+        const replyText = formatOutbound(result.result);
+        if (replyText) {
+          await putMessage({
+            botId: payload.botId,
+            groupJid: payload.groupJid,
+            timestamp: new Date().toISOString(),
+            messageId: `bot-${Date.now()}`,
+            sender: bot.name,
+            senderName: bot.name,
+            content: replyText,
+            isFromMe: true,
+            isBotMessage: true,
+            channelType: payload.channelType,
+            ttl: Math.floor(Date.now() / 1000) + 90 * 24 * 3600,
+          });
 
-        // 9. Send reply via channel adapter
-        const durationMs = Date.now() - startTime;
-        await sendChannelReply(
-          payload.botId,
-          payload.groupJid,
-          payload.channelType,
-          replyText,
-          logger,
-          payload.replyContext,
-          {
-            metadata: {
-              durationMs,
-              tokenCount: result.tokensUsed,
+          // 9. Send reply via channel adapter
+          const durationMs = Date.now() - startTime;
+          await sendChannelReply(
+            payload.botId,
+            payload.groupJid,
+            payload.channelType,
+            replyText,
+            logger,
+            payload.replyContext,
+            {
+              metadata: {
+                durationMs,
+                tokenCount: result.tokensUsed,
+              },
             },
-          },
-        );
+          );
+        }
       }
     } else if (result.status === 'error') {
       logger.error(
@@ -275,30 +286,34 @@ async function dispatchTask(
   const result = await invokeAgent(invocationPayload, logger);
 
   if (result.status === 'success' && result.result) {
-    const replyText = formatOutbound(result.result);
-    if (replyText) {
-      await putMessage({
-        botId: payload.botId,
-        groupJid: payload.groupJid,
-        timestamp: new Date().toISOString(),
-        messageId: `task-${payload.taskId}-${Date.now()}`,
-        sender: bot.name,
-        senderName: bot.name,
-        content: replyText,
-        isFromMe: true,
-        isBotMessage: true,
-        channelType,
-        ttl: Math.floor(Date.now() / 1000) + 90 * 24 * 3600,
-      });
+    if (isSilentReply(result.result)) {
+      logger.info({ botId: payload.botId, groupJid: payload.groupJid }, 'Agent returned NO_REPLY, skipping response');
+    } else {
+      const replyText = formatOutbound(result.result);
+      if (replyText) {
+        await putMessage({
+          botId: payload.botId,
+          groupJid: payload.groupJid,
+          timestamp: new Date().toISOString(),
+          messageId: `task-${payload.taskId}-${Date.now()}`,
+          sender: bot.name,
+          senderName: bot.name,
+          content: replyText,
+          isFromMe: true,
+          isBotMessage: true,
+          channelType,
+          ttl: Math.floor(Date.now() / 1000) + 90 * 24 * 3600,
+        });
 
-      // Send reply via channel API
-      await sendChannelReply(
-        payload.botId,
-        payload.groupJid,
-        channelType,
-        replyText,
-        logger,
-      );
+        // Send reply via channel API
+        await sendChannelReply(
+          payload.botId,
+          payload.groupJid,
+          channelType,
+          replyText,
+          logger,
+        );
+      }
     }
   }
 }
