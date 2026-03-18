@@ -9,20 +9,11 @@
  */
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import type * as Lark from '@larksuiteoapi/node-sdk';
 import { getOrCreateLarkClient, type FeishuToolConfig } from './client.js';
 import { registerDocTool } from './doc-tool.js';
 import { registerWikiTool } from './wiki-tool.js';
-
-// ── Placeholder stubs for Task 8 (feishu_drive, feishu_perm) ────────────────
-
-export function registerDriveTool(_server: McpServer, _client: Lark.Client): void {
-  // Placeholder — implemented in Task 8 (feishu_drive)
-}
-
-export function registerPermTool(_server: McpServer, _client: Lark.Client): void {
-  // Placeholder — implemented in Task 8 (feishu_perm)
-}
+import { registerDriveTool } from './drive-tool.js';
+import { registerPermTool } from './perm-tool.js';
 
 // ── Main entry point ─────────────────────────────────────────────────────────
 
