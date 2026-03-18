@@ -17,8 +17,10 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
+import path from 'node:path';
 import {
   sendMessage,
+  sendFile,
   scheduleTask,
   listTasks,
   pauseTask,
@@ -77,6 +79,23 @@ server.tool(
     const ctx = await buildContext();
     await sendMessage(ctx, args.text, args.sender);
     return { content: [{ type: 'text' as const, text: 'Message sent.' }] };
+  },
+);
+
+// --- send_file ---
+server.tool(
+  'send_file',
+  'Send a file from the workspace to the user or group chat. The file must exist under /workspace/group/. Supports documents (PDF, PPTX, DOCX), images (PNG, JPG), and other file types up to 25MB.',
+  {
+    filePath: z.string().describe('Absolute path to the file, must be under /workspace/group/'),
+    caption: z.string().optional().describe('Optional message to accompany the file'),
+  },
+  async (args) => {
+    const ctx = await buildContext();
+    await sendFile(ctx, args.filePath, args.caption);
+    return {
+      content: [{ type: 'text' as const, text: `File sent: ${path.basename(args.filePath)}` }],
+    };
   },
 );
 
