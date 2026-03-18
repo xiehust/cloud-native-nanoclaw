@@ -4,7 +4,7 @@
 import type { FastifyPluginAsync } from 'fastify';
 import { SQSClient, SendMessageCommand } from '@aws-sdk/client-sqs';
 import { config } from '../config.js';
-import { getChannelsByBot, putMessage, getOrCreateGroup, listGroups, getUser } from '../services/dynamo.js';
+import { getChannelsByBot, putMessage, getOrCreateGroup, listGroups, getUser, updateChannelHealth } from '../services/dynamo.js';
 import { getCachedBot, getChannelCredentials } from '../services/cached-lookups.js';
 import { verifyFeishuSignature } from './signature.js';
 import type { Attachment, Message, SqsInboundPayload } from '@clawbot/shared';
@@ -43,6 +43,13 @@ interface FeishuSender {
   tenant_key?: string;
 }
 
+interface FeishuMention {
+  key: string;
+  id: string;
+  id_type: string;
+  name: string;
+}
+
 interface FeishuMessageEvent {
   message_id: string;
   root_id?: string;
@@ -52,6 +59,7 @@ interface FeishuMessageEvent {
   chat_type: 'p2p' | 'group';
   message_type: string; // text, image, file, audio, rich_text, etc.
   content: string; // JSON string
+  mentions?: FeishuMention[];
 }
 
 interface FeishuImMessageEvent {
@@ -71,30 +79,38 @@ type FeishuPayload = FeishuUrlVerification | FeishuEventCallback;
 
 /**
  * Strip @bot mentions from Feishu text content.
- * Feishu formats mentions as: <at user_id="ou_xxx">BotName</at>
+ * Rich text format: <at user_id="ou_xxx">BotName</at>
+ * Plain text format: @_user_N (where N is a number)
  */
 function stripAtMentions(text: string): string {
-  return text.replace(/<at user_id="[^"]*">[^<]*<\/at>/g, '').trim();
+  // Rich text format
+  let cleaned = text.replace(/<at user_id="[^"]*">[^<]*<\/at>/g, '');
+  // Plain text format
+  cleaned = cleaned.replace(/@_user_\d+/g, '');
+  return cleaned.trim();
 }
 
 /**
  * Check if the bot was @mentioned in a group message.
- * Feishu mentions: <at user_id="ou_xxx">BotName</at>
+ * Uses the structured mentions array from Feishu events, matching on the bot's open_id.
  */
-function isBotMentioned(content: string): boolean {
-  return /<at user_id="[^"]*">[^<]*<\/at>/.test(content);
+function isBotMentioned(mentions: FeishuMention[] | undefined, botOpenId: string): boolean {
+  if (!mentions || !botOpenId) return false;
+  return mentions.some(m => m.id === botOpenId);
 }
 
 function shouldTrigger(
   text: string,
   chatType: 'p2p' | 'group',
   triggerPattern: string,
+  mentions: FeishuMention[] | undefined,
+  botOpenId: string,
 ): boolean {
   // Private (p2p) chats always trigger
   if (chatType === 'p2p') return true;
 
   // In groups, check if bot was @mentioned
-  if (isBotMentioned(text)) return true;
+  if (isBotMentioned(mentions, botOpenId)) return true;
 
   // Check trigger pattern
   if (!triggerPattern) return false;
@@ -163,6 +179,17 @@ function mimeTypeForFeishuMessage(messageType: string): string {
   }
 }
 
+/**
+ * Sanitize file name before using it in S3 keys.
+ * Removes path separators and traversal sequences, truncates long names.
+ */
+function sanitizeFileName(name: string): string {
+  return name
+    .replace(/[/\\]/g, '_')     // Remove path separators
+    .replace(/\.\./g, '_')      // Remove path traversal
+    .slice(0, 200);             // Truncate long names
+}
+
 // ── Webhook Plugin ──────────────────────────────────────────────────────────
 
 export const feishuWebhook: FastifyPluginAsync = async (app) => {
@@ -193,6 +220,16 @@ export const feishuWebhook: FastifyPluginAsync = async (app) => {
         if ('type' in body && body.type === 'url_verification') {
           const verification = body as FeishuUrlVerification;
           logger.info({ botId }, 'Feishu URL verification challenge received');
+
+          // Update channel status from pending_webhook to connected
+          const channels = await getChannelsByBot(botId);
+          const feishuCh = channels.find(c => c.channelType === 'feishu');
+          if (feishuCh) {
+            const channelKey = `${feishuCh.channelType}#${feishuCh.channelId}`;
+            await updateChannelHealth(botId, channelKey, 'healthy', 0, 'connected');
+            logger.info({ botId }, 'Feishu channel status updated to connected (webhook verified)');
+          }
+
           return reply.status(200).send({
             challenge: verification.challenge,
           });
@@ -249,6 +286,11 @@ export const feishuWebhook: FastifyPluginAsync = async (app) => {
         const feishuMsg = event.message;
         const sender = event.sender;
 
+        // Filter out bot's own messages to prevent infinite loops
+        if (sender.sender_type === 'bot') {
+          return reply.status(200).send({ ok: true });
+        }
+
         // Parse message content
         const rawContent = parseFeishuContent(feishuMsg.message_type, feishuMsg.content);
         let content = stripAtMentions(rawContent);
@@ -281,7 +323,7 @@ export const feishuWebhook: FastifyPluginAsync = async (app) => {
             // Extract file_key from content JSON
             const contentParsed = JSON.parse(feishuMsg.content);
             const fileKey = contentParsed.image_key || contentParsed.file_key;
-            const fileName = contentParsed.file_name || `${feishuMsg.message_type}_${Date.now()}`;
+            const fileName = sanitizeFileName(contentParsed.file_name || `${feishuMsg.message_type}_${Date.now()}`);
             const mimeType = mimeTypeForFeishuMessage(feishuMsg.message_type);
             const resourceType = feishuMsg.message_type === 'image' ? 'image' as const : 'file' as const;
 
@@ -321,7 +363,10 @@ export const feishuWebhook: FastifyPluginAsync = async (app) => {
         await getOrCreateGroup(botId, groupJid, chatName, 'feishu', isGroup);
 
         // 9. Store message in DynamoDB
-        const timestamp = new Date(Number(feishuMsg.create_time)).toISOString();
+        const createTimeMs = Number(feishuMsg.create_time);
+        const timestamp = createTimeMs > 0
+          ? new Date(createTimeMs).toISOString()
+          : new Date().toISOString();
         const msg: Message = {
           botId,
           groupJid,
@@ -338,8 +383,8 @@ export const feishuWebhook: FastifyPluginAsync = async (app) => {
         };
         await putMessage(msg);
 
-        // 10. Check trigger (use raw content before stripping mentions for mention detection)
-        if (!shouldTrigger(rawContent, feishuMsg.chat_type, bot.triggerPattern)) {
+        // 10. Check trigger (use mentions array for bot detection, raw content for pattern matching)
+        if (!shouldTrigger(rawContent, feishuMsg.chat_type, bot.triggerPattern, feishuMsg.mentions, creds.botOpenId)) {
           logger.debug({ botId, groupJid }, 'Message did not match trigger');
           return reply.status(200).send({ ok: true });
         }
