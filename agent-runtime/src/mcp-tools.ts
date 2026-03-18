@@ -14,7 +14,10 @@
  *   update_task    → DynamoDB update + update EventBridge schedule
  */
 
+import { readFile, realpath } from 'node:fs/promises';
+import path from 'node:path';
 import { SQSClient, SendMessageCommand } from '@aws-sdk/client-sqs';
+import { PutObjectCommand } from '@aws-sdk/client-s3';
 import {
   PutCommand,
   QueryCommand,
@@ -29,12 +32,13 @@ import {
 } from '@aws-sdk/client-scheduler';
 import { CronExpressionParser } from 'cron-parser';
 import type { ScopedClients } from './scoped-credentials.js';
-import type { ScheduledTask, SqsReplyPayload, ChannelType } from '@clawbot/shared';
+import type { ScheduledTask, SqsTextReplyPayload, SqsFileReplyPayload, ChannelType } from '@clawbot/shared';
 
 const REPLY_QUEUE_URL = process.env.SQS_REPLIES_URL || '';
 const TASKS_TABLE = process.env.TABLE_TASKS || '';
 const SCHEDULER_ROLE_ARN = process.env.SCHEDULER_ROLE_ARN || '';
 const MESSAGES_QUEUE_ARN = process.env.SQS_MESSAGES_ARN || '';
+const SESSION_BUCKET = process.env.SESSION_BUCKET || '';
 
 export interface McpToolContext {
   botId: string;
@@ -55,7 +59,7 @@ export async function sendMessage(
   text: string,
   sender?: string,
 ): Promise<void> {
-  const payload: SqsReplyPayload = {
+  const payload: SqsTextReplyPayload = {
     type: 'reply',
     botId: ctx.botId,
     groupJid: ctx.groupJid,
@@ -75,6 +79,95 @@ export async function sendMessage(
         : undefined,
     }),
   );
+}
+
+// ---------------------------------------------------------------------------
+// send_file — Send a file to a chat
+// Uploads to S3, then sends an SqsFileReplyPayload to the reply queue
+// so the control plane can deliver it via the appropriate channel adapter.
+// ---------------------------------------------------------------------------
+
+export async function sendFile(
+  ctx: McpToolContext,
+  filePath: string,
+  caption?: string,
+): Promise<void> {
+  // 1. Validate path is under /workspace/group/ (resolve symlinks for security)
+  const resolved = await realpath(filePath);
+  if (!resolved.startsWith('/workspace/group/')) {
+    throw new Error('File must be under /workspace/group/');
+  }
+
+  // 2. Read file as Buffer, check size
+  const fileBuffer = await readFile(resolved);
+  const MAX_SIZE = 25 * 1024 * 1024; // 25MB
+  if (fileBuffer.length > MAX_SIZE) {
+    throw new Error(
+      `File too large (${(fileBuffer.length / 1024 / 1024).toFixed(1)}MB). Maximum is 25MB.`,
+    );
+  }
+
+  // 3. Guess mimeType from extension
+  const fileName = path.basename(resolved);
+  const mimeType = guessMimeType(fileName);
+
+  // 4. Upload to S3 via scoped credentials
+  const messageId = `file-${Date.now()}`;
+  const s3Key = `${ctx.userId}/${ctx.botId}/attachments/${messageId}/${fileName}`;
+  await ctx.clients.s3.send(
+    new PutObjectCommand({
+      Bucket: SESSION_BUCKET,
+      Key: s3Key,
+      Body: fileBuffer,
+      ContentType: mimeType,
+    }),
+  );
+
+  // 5. Send SqsFileReplyPayload to reply queue (uses runtime's own credentials)
+  const payload: SqsFileReplyPayload = {
+    type: 'file_reply',
+    botId: ctx.botId,
+    groupJid: ctx.groupJid,
+    channelType: ctx.channelType,
+    s3Key,
+    fileName,
+    mimeType,
+    size: fileBuffer.length,
+    caption,
+    timestamp: new Date().toISOString(),
+  };
+
+  const sqs = new SQSClient({});
+  await sqs.send(
+    new SendMessageCommand({
+      QueueUrl: REPLY_QUEUE_URL,
+      MessageBody: JSON.stringify(payload),
+    }),
+  );
+}
+
+function guessMimeType(fileName: string): string {
+  const ext = path.extname(fileName).toLowerCase();
+  const mimeTypes: Record<string, string> = {
+    '.pdf': 'application/pdf',
+    '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    '.png': 'image/png',
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.gif': 'image/gif',
+    '.svg': 'image/svg+xml',
+    '.zip': 'application/zip',
+    '.csv': 'text/csv',
+    '.txt': 'text/plain',
+    '.json': 'application/json',
+    '.html': 'text/html',
+    '.md': 'text/markdown',
+    '.mp4': 'video/mp4',
+    '.mp3': 'audio/mpeg',
+  };
+  return mimeTypes[ext] || 'application/octet-stream';
 }
 
 // ---------------------------------------------------------------------------

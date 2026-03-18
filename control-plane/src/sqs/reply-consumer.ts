@@ -7,6 +7,7 @@ import {
   ReceiveMessageCommand,
   DeleteMessageCommand,
 } from '@aws-sdk/client-sqs';
+import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
 import { config } from '../config.js';
 import { getRegistry } from '../adapters/registry.js';
 import type { ReplyContext } from '@clawbot/shared/channel-adapter';
@@ -32,6 +33,7 @@ export function stopReplyConsumer(): void {
 
 async function replyLoop(logger: Logger): Promise<void> {
   const sqs = new SQSClient({ region: config.region });
+  const s3 = new S3Client({ region: config.region });
 
   logger.info({ queueUrl: config.queues.replies }, 'Reply consumer started');
 
@@ -79,7 +81,46 @@ async function replyLoop(logger: Logger): Promise<void> {
             channelType: payload.channelType as ChannelType,
           };
 
-          await adapter.sendReply(ctx, payload.text);
+          if (payload.type === 'file_reply') {
+            const resp = await s3.send(
+              new GetObjectCommand({
+                Bucket: config.s3Bucket,
+                Key: payload.s3Key,
+              }),
+            );
+            if (!resp.Body) {
+              logger.error({ s3Key: payload.s3Key }, 'S3 file body is empty or missing, skipping');
+              continue;
+            }
+            const fileBuffer = Buffer.from(
+              await resp.Body.transformToByteArray(),
+            );
+
+            if (adapter.sendFile) {
+              await adapter.sendFile(
+                ctx,
+                fileBuffer,
+                payload.fileName,
+                payload.mimeType,
+                payload.caption,
+              );
+              logger.info(
+                { botId: payload.botId, fileName: payload.fileName },
+                'File sent via adapter',
+              );
+            } else {
+              await adapter.sendReply(
+                ctx,
+                `[File: ${payload.fileName}] (file sending not supported on this channel)`,
+              );
+              logger.warn(
+                { channelType: payload.channelType },
+                'Adapter does not support sendFile, sent text fallback',
+              );
+            }
+          } else {
+            await adapter.sendReply(ctx, payload.text);
+          }
 
           // Delete message on success
           await sqs.send(

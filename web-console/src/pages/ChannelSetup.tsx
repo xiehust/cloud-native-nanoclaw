@@ -56,7 +56,10 @@ function SlackGuide({ botId, step }: { botId: string; step: 'before' | 'after' }
                 <li><code className="bg-blue-100 px-1 rounded">im:history</code> — Read direct messages</li>
                 <li><code className="bg-blue-100 px-1 rounded">im:read</code> — Access DM conversations</li>
                 <li><code className="bg-blue-100 px-1 rounded">im:write</code> — Send direct messages</li>
+                <li><code className="bg-blue-100 px-1 rounded">files:read</code> — Read file attachments sent by users</li>
+                <li><code className="bg-blue-100 px-1 rounded">files:write</code> — Send file attachments in responses</li>
               </ul>
+              <p className="text-blue-600 mt-1 text-xs">The <code className="bg-blue-100 px-1 rounded">files:read</code> and <code className="bg-blue-100 px-1 rounded">files:write</code> scopes are needed for sending and receiving file attachments.</p>
             </div>
           </div>
 
@@ -274,6 +277,7 @@ function DiscordGuide({ botId, step }: { botId: string; step: 'before' | 'after'
                     <li><code className="bg-blue-100 px-1 rounded">Embed Links</code> — for rich reply formatting</li>
                     <li><code className="bg-blue-100 px-1 rounded">Read Message History</code></li>
                     <li><code className="bg-blue-100 px-1 rounded">View Channels</code></li>
+                    <li><code className="bg-blue-100 px-1 rounded">Attach Files</code> — for sending file attachments</li>
                     <li><code className="bg-blue-100 px-1 rounded">Use Slash Commands</code></li>
                   </ul>
                 </li>

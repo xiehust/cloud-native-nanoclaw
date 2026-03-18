@@ -173,6 +173,106 @@ export class DiscordAdapter extends BaseChannelAdapter {
     }
   }
 
+  // ── Send File ──────────────────────────────────────────────────────────
+
+  async sendFile(
+    ctx: ReplyContext,
+    file: Buffer,
+    fileName: string,
+    _mimeType: string,
+    caption?: string,
+  ): Promise<void> {
+    try {
+      const channelId = ctx.discordChannelId || ctx.groupJid.split(':')[1];
+      if (!channelId) {
+        this.logger.error({ groupJid: ctx.groupJid }, 'Cannot extract channelId for sendFile');
+        return;
+      }
+
+      // Try Gateway client first
+      if (this.client) {
+        try {
+          const channel = await this.client.channels.fetch(channelId);
+          if (channel && 'send' in channel) {
+            await (channel as TextChannel).send({
+              content: caption || '',
+              files: [{ attachment: file, name: fileName }],
+            });
+            this.logger.info(
+              { botId: ctx.botId, groupJid: ctx.groupJid, fileName },
+              'File sent via Gateway client',
+            );
+            return;
+          }
+        } catch {
+          // Fall through to REST API
+        }
+      }
+
+      // Fallback: REST API with interaction webhook
+      if (ctx.discordInteractionToken) {
+        const info = this.findBotInfo(ctx.botId);
+        if (info) {
+          const form = new FormData();
+          form.append('payload_json', JSON.stringify({ content: caption || '' }));
+          form.append('files[0]', new Blob([file]), fileName);
+
+          const resp = await fetch(
+            `https://discord.com/api/v10/webhooks/${info.applicationId}/${ctx.discordInteractionToken}`,
+            { method: 'POST', headers: { Authorization: `Bot ${info.botToken}` }, body: form },
+          );
+          if (!resp.ok) {
+            const body = await resp.text();
+            throw new Error(`Discord webhook file upload failed: ${resp.status} — ${body}`);
+          }
+          this.logger.info(
+            { botId: ctx.botId, groupJid: ctx.groupJid, fileName },
+            'File sent via interaction webhook',
+          );
+          return;
+        }
+      }
+
+      // Fallback: REST channel message with multipart
+      const info = this.findBotInfo(ctx.botId);
+      let botToken: string;
+      if (info) {
+        botToken = info.botToken;
+      } else {
+        const channels = await getChannelsByBot(ctx.botId);
+        const ch = channels.find((c) => c.channelType === 'discord');
+        if (!ch) {
+          this.logger.error({ botId: ctx.botId }, 'No Discord channel config for sendFile');
+          return;
+        }
+        const creds = await getChannelCredentials(ch.credentialSecretArn);
+        botToken = creds.botToken;
+      }
+
+      const form = new FormData();
+      form.append('payload_json', JSON.stringify({ content: caption || '' }));
+      form.append('files[0]', new Blob([file]), fileName);
+
+      const resp = await fetch(
+        `https://discord.com/api/v10/channels/${channelId}/messages`,
+        { method: 'POST', headers: { Authorization: `Bot ${botToken}` }, body: form },
+      );
+      if (!resp.ok) {
+        const body = await resp.text();
+        throw new Error(`Discord REST file upload failed: ${resp.status} — ${body}`);
+      }
+      this.logger.info(
+        { botId: ctx.botId, groupJid: ctx.groupJid, fileName },
+        'File sent via REST API',
+      );
+    } catch (err) {
+      this.logger.error(
+        { err, botId: ctx.botId, groupJid: ctx.groupJid, fileName },
+        'Failed to send file via Discord',
+      );
+    }
+  }
+
   // ── Slash Commands ─────────────────────────────────────────────────────
 
   async registerCommands(): Promise<void> {
