@@ -132,8 +132,9 @@ export const slackWebhook: FastifyPluginAsync = async (app) => {
         const eventPayload = body as SlackEventCallback;
         const event = eventPayload.event;
 
-        // Only handle message events (not subtypes like message_changed, bot_message)
-        if (event.type !== 'message' || event.subtype || event.bot_id) {
+        // Only handle message events — allow file_share subtype for attachments
+        const allowedSubtypes = new Set([undefined, 'file_share']);
+        if (event.type !== 'message' || !allowedSubtypes.has(event.subtype) || event.bot_id) {
           return reply.status(200).send({ ok: true });
         }
 

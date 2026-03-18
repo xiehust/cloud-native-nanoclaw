@@ -181,7 +181,7 @@ function SlackGuide({ botId, step }: { botId: string; step: 'before' | 'after' }
           <div>
             <p className="font-medium text-green-900">Save, Reinstall & Invite Bot</p>
             <p className="text-green-700 mt-0.5">
-              Click <strong>Save Changes</strong>. Then go to <strong>OAuth & Permissions</strong> → <strong>Reinstall to Workspace</strong> (required after adding event subscriptions). Finally, invite the bot to a channel: type <code className="bg-green-100 px-1 rounded">/invite @YourBotName</code>
+              Click <strong>Save Changes</strong>. Then go to <strong>OAuth & Permissions</strong> → <strong>Reinstall to Workspace</strong> (required after adding scopes or event subscriptions). Finally, invite the bot to a channel: type <code className="bg-green-100 px-1 rounded">/invite @YourBotName</code>
             </p>
           </div>
         </div>
