@@ -7,6 +7,7 @@ import {
   ReceiveMessageCommand,
   DeleteMessageCommand,
 } from '@aws-sdk/client-sqs';
+import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
 import { config } from '../config.js';
 import { getRegistry } from '../adapters/registry.js';
 import type { ReplyContext } from '@clawbot/shared/channel-adapter';
@@ -80,11 +81,39 @@ async function replyLoop(logger: Logger): Promise<void> {
           };
 
           if (payload.type === 'file_reply') {
-            // TODO(#46): download from S3 and call adapter.sendFile
-            logger.warn(
-              { botId: payload.botId, groupJid: payload.groupJid },
-              'file_reply not yet implemented, skipping',
+            const s3 = new S3Client({ region: config.region });
+            const resp = await s3.send(
+              new GetObjectCommand({
+                Bucket: config.s3Bucket,
+                Key: payload.s3Key,
+              }),
             );
+            const fileBuffer = Buffer.from(
+              await resp.Body!.transformToByteArray(),
+            );
+
+            if (adapter.sendFile) {
+              await adapter.sendFile(
+                ctx,
+                fileBuffer,
+                payload.fileName,
+                payload.mimeType,
+                payload.caption,
+              );
+              logger.info(
+                { botId: payload.botId, fileName: payload.fileName },
+                'File sent via adapter',
+              );
+            } else {
+              await adapter.sendReply(
+                ctx,
+                `[File: ${payload.fileName}] (file sending not supported on this channel)`,
+              );
+              logger.warn(
+                { channelType: payload.channelType },
+                'Adapter does not support sendFile, sent text fallback',
+              );
+            }
           } else {
             await adapter.sendReply(ctx, payload.text);
           }
