@@ -37,3 +37,34 @@ export async function downloadAndStore(
 
   return { type, s3Key, fileName, mimeType, size: buffer.length };
 }
+
+/**
+ * Store an already-downloaded buffer (ArrayBuffer) as an attachment in S3.
+ * Used by channels (e.g. Feishu) that download resources via their own API
+ * and return raw bytes instead of a public URL.
+ */
+export async function storeFromBuffer(
+  userId: string,
+  botId: string,
+  messageId: string,
+  data: ArrayBuffer,
+  fileName: string,
+  mimeType: string,
+): Promise<Attachment | null> {
+  const buffer = Buffer.from(data);
+  if (buffer.length > MAX_FILE_SIZE) return null;
+
+  const type = mimeType.startsWith('image/') ? ('image' as const) : ('document' as const);
+  const s3Key = `${userId}/${botId}/attachments/${messageId}/${fileName}`;
+
+  await s3.send(
+    new PutObjectCommand({
+      Bucket: config.s3Bucket,
+      Key: s3Key,
+      Body: buffer,
+      ContentType: mimeType,
+    }),
+  );
+
+  return { type, s3Key, fileName, mimeType, size: buffer.length };
+}
