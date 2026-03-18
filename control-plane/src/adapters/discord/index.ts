@@ -732,30 +732,31 @@ export class DiscordAdapter extends BaseChannelAdapter {
     // Process attachments
     const attachments: import('@clawbot/shared').Attachment[] = [];
     for (const [, da] of message.attachments) {
-      const ct = da.contentType || '';
+      const ct = da.contentType || 'application/octet-stream';
+      this.logger.info({ botId, name: da.name, contentType: da.contentType, size: da.size }, 'Processing Discord attachment');
       if (ct.startsWith('audio/') || ct.startsWith('video/')) {
         content += '\n[Voice/Video message — not yet supported]';
         continue;
       }
-      if (
-        ct.startsWith('image/') ||
-        ct.startsWith('application/') ||
-        ct.startsWith('text/')
-      ) {
-        try {
-          const att = await downloadAndStore(
-            bot.userId,
-            botId,
-            messageId,
-            da.url,
-            da.name,
-            ct,
-          );
-          if (att) attachments.push(att);
-        } catch (err) {
-          this.logger.warn({ err, botId }, 'Failed to download attachment');
-        }
+      try {
+        const att = await downloadAndStore(
+          bot.userId,
+          botId,
+          messageId,
+          da.url,
+          da.name,
+          ct,
+        );
+        if (att) attachments.push(att);
+      } catch (err) {
+        this.logger.warn({ err, botId, name: da.name }, 'Failed to download attachment');
       }
+    }
+
+    // Append attachment info to content so agent knows what files are available
+    if (attachments.length > 0) {
+      const fileDescs = attachments.map((a) => `- ${a.fileName || a.s3Key.split('/').pop()} (${a.mimeType})`).join('\n');
+      content += `\n[Attached files — saved to /workspace/group/attachments/]\n${fileDescs}`;
     }
 
     // Group quota check
