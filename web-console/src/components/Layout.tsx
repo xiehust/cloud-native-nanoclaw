@@ -14,6 +14,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
               <Link to="/" className="text-xl font-bold text-indigo-600">NanoClaw Cloud</Link>
             </div>
             <div className="flex items-center gap-4">
+              <Link to="/settings" className="text-sm text-gray-600 hover:text-gray-900 font-medium">Settings</Link>
               {user?.isAdmin && (
                 <Link to="/admin/users" className="text-sm text-indigo-600 hover:text-indigo-500 font-medium">Admin</Link>
               )}
