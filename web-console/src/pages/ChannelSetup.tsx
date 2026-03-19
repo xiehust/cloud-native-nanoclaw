@@ -442,7 +442,7 @@ function FeishuGuide({ step }: { step: 'before' | 'after' }) {
       "docx:document:readonly",
       "drive:drive",
       "drive:drive:readonly",
-      "drive:file:permission:member",
+      "docs:permission.member:create",
       "event:ip_list",
       "im:chat.access_event.bot_p2p_chat:read",
       "im:chat.members:bot_access",
@@ -464,7 +464,7 @@ function FeishuGuide({ step }: { step: 'before' | 'after' }) {
 }`}</pre>
                   <button
                     type="button"
-                    onClick={() => navigator.clipboard.writeText(JSON.stringify({"scopes":{"tenant":["aily:file:read","aily:file:write","application:application.app_message_stats.overview:readonly","application:application:self_manage","application:bot.menu:write","cardkit:card:read","cardkit:card:write","contact:user.employee_id:readonly","corehr:file:download","docs:doc","docs:doc:readonly","docx:document","docx:document:readonly","drive:drive","drive:drive:readonly","drive:file:permission:member","event:ip_list","im:chat.access_event.bot_p2p_chat:read","im:chat.members:bot_access","im:message","im:message.group_at_msg:readonly","im:message.p2p_msg:readonly","im:message:readonly","im:message:send_as_bot","im:resource","wiki:wiki","wiki:wiki:readonly"],"user":["aily:file:read","aily:file:write","im:chat.access_event.bot_p2p_chat:read"]}}, null, 2))}
+                    onClick={() => navigator.clipboard.writeText(JSON.stringify({"scopes":{"tenant":["aily:file:read","aily:file:write","application:application.app_message_stats.overview:readonly","application:application:self_manage","application:bot.menu:write","cardkit:card:read","cardkit:card:write","contact:user.employee_id:readonly","corehr:file:download","docs:doc","docs:doc:readonly","docx:document","docx:document:readonly","drive:drive","drive:drive:readonly","docs:permission.member:create","event:ip_list","im:chat.access_event.bot_p2p_chat:read","im:chat.members:bot_access","im:message","im:message.group_at_msg:readonly","im:message.p2p_msg:readonly","im:message:readonly","im:message:send_as_bot","im:resource","wiki:wiki","wiki:wiki:readonly"],"user":["aily:file:read","aily:file:write","im:chat.access_event.bot_p2p_chat:read"]}}, null, 2))}
                     className="absolute top-2 right-2 px-2 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700"
                   >
                     Copy
@@ -502,7 +502,7 @@ function FeishuGuide({ step }: { step: 'before' | 'after' }) {
               <ul className="ml-4 list-disc text-blue-700 space-y-0.5">
                 <li><code className="bg-blue-100 px-1 rounded">drive:drive</code> — 读写云盘文件</li>
                 <li><code className="bg-blue-100 px-1 rounded">drive:drive:readonly</code> — 只读云盘文件</li>
-                <li><code className="bg-blue-100 px-1 rounded">drive:file:permission:member</code> — 管理文档权限</li>
+                <li><code className="bg-blue-100 px-1 rounded">docs:permission.member:create</code> — 管理文档权限</li>
               </ul>
             </div>
           </div>
