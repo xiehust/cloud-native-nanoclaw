@@ -1,15 +1,17 @@
 import { useState, useEffect } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, Radio, MessageSquare, Clock, Brain,
   FolderOpen, Settings as SettingsIcon, Plus, Trash2, ExternalLink,
+  Play, Pause, Save, AlertTriangle,
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import TabNav from '../components/TabNav';
 import Badge from '../components/Badge';
 import {
   bots as botsApi, channels as channelsApi, groups as groupsApi,
-  user as userApi, Bot, ChannelConfig, Group,
+  tasks as tasksApi, memory as memoryApi,
+  user as userApi, Bot, ChannelConfig, Group, ScheduledTask,
 } from '../lib/api';
 
 /* ── Model presets ─────────────────────────────────────────────────── */
@@ -55,7 +57,7 @@ function OverviewTab({
   bot, botId, editing, setEditing, editName, setEditName, editDesc, setEditDesc, saveBot,
   provider, setProvider, providerHasKey, modelSelection, setModelSelection,
   customModelId, setCustomModelId, saveModel, savingModel, modelStatus,
-  channelCount, conversationCount,
+  channelCount, conversationCount, taskCount,
 }: {
   bot: Bot;
   botId: string;
@@ -78,6 +80,7 @@ function OverviewTab({
   modelStatus: 'saved' | 'error' | null;
   channelCount: number;
   conversationCount: number;
+  taskCount: number;
 }) {
   const activePresets = provider === 'anthropic-api' ? API_MODEL_PRESETS : BEDROCK_MODEL_PRESETS;
 
@@ -244,7 +247,7 @@ function OverviewTab({
           <p className="text-sm text-slate-500 mt-1">Conversations</p>
         </div>
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5 text-center">
-          <p className="text-2xl font-semibold text-slate-900">--</p>
+          <p className="text-2xl font-semibold text-slate-900">{taskCount}</p>
           <p className="text-sm text-slate-500 mt-1">Tasks</p>
         </div>
       </div>
@@ -376,6 +379,373 @@ function ConversationsTab({
   );
 }
 
+/* ── Tasks tab ────────────────────────────────────────────────────── */
+
+function TasksTab({
+  botId, tasksList, loadData,
+}: {
+  botId: string;
+  tasksList: ScheduledTask[];
+  loadData: () => void;
+}) {
+  const [showCreate, setShowCreate] = useState(false);
+  const [newTask, setNewTask] = useState({ groupJid: '', prompt: '', scheduleType: 'cron', scheduleValue: '' });
+  const [creating, setCreating] = useState(false);
+
+  async function createTask() {
+    setCreating(true);
+    try {
+      await tasksApi.create(botId, newTask);
+      setShowCreate(false);
+      setNewTask({ groupJid: '', prompt: '', scheduleType: 'cron', scheduleValue: '' });
+      loadData();
+    } catch (err) {
+      console.error('Failed to create task:', err);
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  async function toggleTask(taskId: string, currentStatus: string) {
+    const newStatus = currentStatus === 'active' ? 'paused' : 'active';
+    await tasksApi.update(botId, taskId, { status: newStatus });
+    loadData();
+  }
+
+  async function deleteTask(taskId: string) {
+    if (!confirm('Delete this task?')) return;
+    await tasksApi.delete(botId, taskId);
+    loadData();
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-between items-center">
+        <p className="text-sm text-slate-500">{tasksList.length} scheduled task{tasksList.length !== 1 ? 's' : ''}</p>
+        <button
+          onClick={() => setShowCreate(true)}
+          className="inline-flex items-center gap-1.5 rounded-lg bg-accent-500 text-white px-4 py-2 text-sm font-medium hover:bg-accent-600 transition-colors"
+        >
+          <Plus size={16} /> New Task
+        </button>
+      </div>
+
+      {/* Create task form */}
+      {showCreate && (
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5 space-y-3">
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Group JID</label>
+            <input
+              placeholder="e.g. group-chat-id"
+              value={newTask.groupJid}
+              onChange={e => setNewTask(prev => ({ ...prev, groupJid: e.target.value }))}
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-accent-500 focus:ring-2 focus:ring-accent-500/20 focus:outline-none"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Prompt</label>
+            <textarea
+              placeholder="What should the bot do on this schedule?"
+              value={newTask.prompt}
+              onChange={e => setNewTask(prev => ({ ...prev, prompt: e.target.value }))}
+              rows={3}
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-accent-500 focus:ring-2 focus:ring-accent-500/20 focus:outline-none resize-none"
+            />
+          </div>
+          <div className="flex gap-3">
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Schedule Type</label>
+              <select
+                value={newTask.scheduleType}
+                onChange={e => setNewTask(prev => ({ ...prev, scheduleType: e.target.value }))}
+                className="rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-accent-500 focus:ring-2 focus:ring-accent-500/20 focus:outline-none"
+              >
+                <option value="cron">Cron</option>
+                <option value="interval">Interval (ms)</option>
+                <option value="once">Once (ISO)</option>
+              </select>
+            </div>
+            <div className="flex-1">
+              <label className="block text-sm font-medium text-slate-700 mb-1">Schedule Value</label>
+              <input
+                placeholder={newTask.scheduleType === 'cron' ? '0 9 * * *' : newTask.scheduleType === 'interval' ? '3600000' : '2025-01-01T09:00:00Z'}
+                value={newTask.scheduleValue}
+                onChange={e => setNewTask(prev => ({ ...prev, scheduleValue: e.target.value }))}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-accent-500 focus:ring-2 focus:ring-accent-500/20 focus:outline-none"
+              />
+            </div>
+          </div>
+          <div className="flex gap-2 pt-1">
+            <button
+              onClick={createTask}
+              disabled={creating || !newTask.groupJid.trim() || !newTask.prompt.trim() || !newTask.scheduleValue.trim()}
+              className="rounded-lg bg-accent-500 text-white px-4 py-2 text-sm font-medium hover:bg-accent-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {creating ? 'Creating...' : 'Create Task'}
+            </button>
+            <button
+              onClick={() => setShowCreate(false)}
+              className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Task list */}
+      {tasksList.length === 0 ? (
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-8 text-center">
+          <Clock size={32} className="mx-auto text-slate-300 mb-3" />
+          <p className="text-sm text-slate-500">
+            No scheduled tasks yet. Create one to have your bot run prompts on a schedule.
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {tasksList.map((task) => (
+            <div key={task.taskId} className="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
+              <div className="flex justify-between items-start">
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-slate-900 truncate">
+                    {task.prompt.length > 100 ? task.prompt.slice(0, 100) + '...' : task.prompt}
+                  </p>
+                  <p className="text-xs text-slate-500 mt-1">
+                    {task.scheduleType}: <span className="font-mono">{task.scheduleValue}</span>
+                    {' '}&middot;{' '}Group: {task.groupJid}
+                  </p>
+                  {task.nextRun && (
+                    <p className="text-xs text-slate-400 mt-1">
+                      Next run: {new Date(task.nextRun).toLocaleString()}
+                    </p>
+                  )}
+                </div>
+                <div className="flex items-center gap-2 ml-4 shrink-0">
+                  <Badge
+                    variant={
+                      task.status === 'active' ? 'success' :
+                      task.status === 'paused' ? 'warning' : 'neutral'
+                    }
+                  >
+                    {task.status}
+                  </Badge>
+                  <button
+                    onClick={() => toggleTask(task.taskId, task.status)}
+                    className="inline-flex items-center gap-1 text-sm text-accent-600 hover:text-accent-700 font-medium transition-colors"
+                    title={task.status === 'active' ? 'Pause' : 'Resume'}
+                  >
+                    {task.status === 'active' ? <Pause size={14} /> : <Play size={14} />}
+                    {task.status === 'active' ? 'Pause' : 'Resume'}
+                  </button>
+                  <button
+                    onClick={() => deleteTask(task.taskId)}
+                    className="inline-flex items-center gap-1 text-sm text-red-500 hover:text-red-700 transition-colors"
+                  >
+                    <Trash2 size={14} /> Delete
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ── Memory tab ───────────────────────────────────────────────────── */
+
+function MemoryTab({ botId }: { botId: string }) {
+  const [memoryTab, setMemoryTab] = useState<'bot' | 'shared'>('bot');
+  const [content, setContent] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [status, setStatus] = useState<'saved' | 'error' | null>(null);
+
+  useEffect(() => { loadMemory(); }, [memoryTab, botId]);
+
+  async function loadMemory() {
+    setLoading(true);
+    setStatus(null);
+    try {
+      const result = memoryTab === 'bot'
+        ? await memoryApi.getBotGlobal(botId)
+        : await memoryApi.getShared();
+      setContent(result.content || '');
+    } catch (err) {
+      console.error('Failed to load memory:', err);
+      setContent('');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function saveMemory() {
+    setSaving(true);
+    setStatus(null);
+    try {
+      if (memoryTab === 'bot') {
+        await memoryApi.updateBotGlobal(botId, content);
+      } else {
+        await memoryApi.updateShared(content);
+      }
+      setStatus('saved');
+      setTimeout(() => setStatus(null), 3000);
+    } catch (err) {
+      console.error('Failed to save memory:', err);
+      setStatus('error');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const tabMeta = {
+    bot: { label: 'Bot Memory', description: 'Bot operating manual — identity, personality, rules, and notes (CLAUDE.md)', placeholder: 'Enter bot memory content...' },
+    shared: { label: 'Shared Memory', description: 'Memory shared across all bots (CLAUDE.md)', placeholder: 'Enter shared memory content...' },
+  };
+  const meta = tabMeta[memoryTab];
+
+  return (
+    <div className="space-y-4">
+      {/* Sub-tabs */}
+      <div className="flex gap-2">
+        {(['bot', 'shared'] as const).map((tab) => (
+          <button
+            key={tab}
+            onClick={() => setMemoryTab(tab)}
+            className={clsx(
+              'px-3 py-1.5 rounded-lg text-sm font-medium transition-colors',
+              memoryTab === tab
+                ? 'bg-accent-500 text-white'
+                : 'bg-slate-100 text-slate-600 hover:bg-slate-200',
+            )}
+          >
+            {tabMeta[tab].label}
+          </button>
+        ))}
+      </div>
+
+      <p className="text-sm text-slate-500">{meta.description}</p>
+
+      {loading ? (
+        <div className="text-center py-12 text-slate-500 text-sm">Loading...</div>
+      ) : (
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
+          <textarea
+            value={content}
+            onChange={e => setContent(e.target.value)}
+            rows={20}
+            placeholder={meta.placeholder}
+            className="w-full font-mono text-sm p-4 border border-slate-300 rounded-lg focus:border-accent-500 focus:ring-2 focus:ring-accent-500/20 focus:outline-none resize-y"
+          />
+          <div className="mt-4 flex items-center gap-3">
+            <button
+              onClick={saveMemory}
+              disabled={saving}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-accent-500 text-white px-4 py-2 text-sm font-medium hover:bg-accent-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <Save size={16} /> {saving ? 'Saving...' : `Save ${meta.label}`}
+            </button>
+            {status === 'saved' && <span className="text-sm text-emerald-600">Saved successfully</span>}
+            {status === 'error' && <span className="text-sm text-red-600">Failed to save</span>}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ── Settings tab ─────────────────────────────────────────────────── */
+
+function SettingsTab({
+  bot, botId, loadData,
+}: {
+  bot: Bot;
+  botId: string;
+  loadData: () => void;
+}) {
+  const navigate = useNavigate();
+  const [trigger, setTrigger] = useState(bot.triggerPattern);
+  const [savingTrigger, setSavingTrigger] = useState(false);
+  const [triggerStatus, setTriggerStatus] = useState<'saved' | 'error' | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  async function saveTrigger() {
+    setSavingTrigger(true);
+    setTriggerStatus(null);
+    try {
+      await botsApi.update(botId, { triggerPattern: trigger });
+      setTriggerStatus('saved');
+      setTimeout(() => setTriggerStatus(null), 2000);
+      loadData();
+    } catch (err) {
+      console.error('Failed to save trigger:', err);
+      setTriggerStatus('error');
+    } finally {
+      setSavingTrigger(false);
+    }
+  }
+
+  async function deleteBot() {
+    if (!window.confirm(`Are you sure you want to delete "${bot.name}"? This action cannot be undone.`)) return;
+    setDeleting(true);
+    try {
+      await botsApi.delete(botId);
+      navigate('/');
+    } catch (err) {
+      console.error('Failed to delete bot:', err);
+      setDeleting(false);
+    }
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Trigger pattern */}
+      <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
+        <h2 className="text-base font-semibold text-slate-900 mb-1">Trigger Pattern</h2>
+        <p className="text-sm text-slate-500 mb-4">
+          The regex pattern that activates this bot in group chats. Messages matching this pattern will be forwarded to the agent.
+        </p>
+        <div className="flex gap-3 items-start">
+          <input
+            value={trigger}
+            onChange={e => setTrigger(e.target.value)}
+            placeholder="e.g. ^@bot\\b"
+            className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono focus:border-accent-500 focus:ring-2 focus:ring-accent-500/20 focus:outline-none"
+          />
+          <button
+            onClick={saveTrigger}
+            disabled={savingTrigger || trigger === bot.triggerPattern}
+            className="rounded-lg bg-accent-500 text-white px-4 py-2 text-sm font-medium hover:bg-accent-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {savingTrigger ? 'Saving...' : 'Save'}
+          </button>
+        </div>
+        {triggerStatus === 'saved' && <p className="text-sm text-emerald-600 mt-2">Saved</p>}
+        {triggerStatus === 'error' && <p className="text-sm text-red-600 mt-2">Failed to save</p>}
+      </div>
+
+      {/* Danger zone */}
+      <div className="bg-white rounded-xl shadow-sm border-2 border-red-200 p-5">
+        <div className="flex items-center gap-2 mb-1">
+          <AlertTriangle size={18} className="text-red-500" />
+          <h2 className="text-base font-semibold text-red-700">Danger Zone</h2>
+        </div>
+        <p className="text-sm text-slate-500 mb-4">
+          Deleting this bot will permanently remove all its channels, conversations, tasks, memory, and session data.
+        </p>
+        <button
+          onClick={deleteBot}
+          disabled={deleting}
+          className="inline-flex items-center gap-1.5 rounded-lg bg-red-600 text-white px-4 py-2 text-sm font-medium hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          <Trash2 size={16} /> {deleting ? 'Deleting...' : 'Delete Bot'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 /* ── Main component ────────────────────────────────────────────────── */
 
 export default function BotDetail() {
@@ -383,6 +753,7 @@ export default function BotDetail() {
   const [bot, setBot] = useState<Bot | null>(null);
   const [channelsList, setChannels] = useState<ChannelConfig[]>([]);
   const [groupsList, setGroups] = useState<Group[]>([]);
+  const [tasksList, setTasks] = useState<ScheduledTask[]>([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
   const [editName, setEditName] = useState('');
@@ -399,15 +770,17 @@ export default function BotDetail() {
 
   async function loadData() {
     try {
-      const [botData, chs, grps, providerConfig] = await Promise.all([
+      const [botData, chs, grps, tks, providerConfig] = await Promise.all([
         botsApi.get(botId!),
         channelsApi.list(botId!),
         groupsApi.list(botId!),
+        tasksApi.list(botId!),
         userApi.getProvider(),
       ]);
       setBot(botData);
       setChannels(chs);
       setGroups(grps);
+      setTasks(tks);
       setEditName(botData.name);
       setEditDesc(botData.description || '');
       setProviderHasKey(providerConfig.hasApiKey);
@@ -491,6 +864,7 @@ export default function BotDetail() {
             modelStatus={modelStatus}
             channelCount={channelsList.length}
             conversationCount={groupsList.length}
+            taskCount={tasksList.length}
           />
         )}
         {activeTab === 'channels' && (
@@ -500,16 +874,16 @@ export default function BotDetail() {
           <ConversationsTab botId={botId!} groupsList={groupsList} />
         )}
         {activeTab === 'tasks' && (
-          <div className="text-slate-500 text-sm">Tasks tab — coming soon</div>
+          <TasksTab botId={botId!} tasksList={tasksList} loadData={loadData} />
         )}
         {activeTab === 'memory' && (
-          <div className="text-slate-500 text-sm">Memory tab — coming soon</div>
+          <MemoryTab botId={botId!} />
         )}
         {activeTab === 'files' && (
           <div className="text-slate-500 text-sm">Files tab — coming soon</div>
         )}
         {activeTab === 'settings' && (
-          <div className="text-slate-500 text-sm">Settings tab — coming soon</div>
+          <SettingsTab bot={bot} botId={botId!} loadData={loadData} />
         )}
       </div>
     </div>
