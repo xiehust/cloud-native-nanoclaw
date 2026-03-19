@@ -328,6 +328,11 @@ async function runAgentQuery(params: QueryParams): Promise<InvocationResult> {
           'NotebookEdit',
           'mcp__nanoclawbot__*',
         ],
+        disallowedTools: [
+          'CronCreate',
+          'CronDelete',
+          'CronList',
+        ],
         env: sdkEnv,
         permissionMode: 'bypassPermissions',
         allowDangerouslySkipPermissions: true,
