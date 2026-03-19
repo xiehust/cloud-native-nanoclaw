@@ -13,7 +13,7 @@
 
 import { S3Client, GetObjectCommand, PutObjectCommand, DeleteObjectCommand, ListObjectsV2Command } from '@aws-sdk/client-s3';
 import { existsSync } from 'fs';
-import { mkdir, readdir, readFile, writeFile } from 'fs/promises';
+import { mkdir, readdir, readFile, writeFile, stat, realpath } from 'fs/promises';
 import { join, dirname, relative } from 'path';
 import type pino from 'pino';
 
@@ -182,10 +182,26 @@ async function uploadDirectory(
   try {
     const entries = await readdir(localDir, { recursive: true, withFileTypes: true });
     for (const entry of entries) {
-      if (!entry.isFile()) continue;
       const fullPath = join(entry.parentPath || entry.path, entry.name);
       const rel = relative(localDir, fullPath);
-      await uploadFile(s3, bucket, fullPath, prefix + rel, logger);
+
+      if (entry.isFile()) {
+        await uploadFile(s3, bucket, fullPath, prefix + rel, logger);
+      } else if (entry.isSymbolicLink()) {
+        // Symlinks (e.g. skills installed by Claude Code) may point to
+        // directories outside the sync root. Resolve and upload the target.
+        try {
+          const realTarget = await realpath(fullPath);
+          const targetStat = await stat(realTarget);
+          if (targetStat.isFile()) {
+            await uploadFile(s3, bucket, realTarget, prefix + rel, logger);
+          } else if (targetStat.isDirectory()) {
+            await uploadDirectory(s3, bucket, realTarget, prefix + rel + '/', logger);
+          }
+        } catch {
+          logger.debug({ fullPath }, 'Broken symlink, skipping');
+        }
+      }
     }
   } catch (err: unknown) {
     if (err instanceof Error && (err as NodeJS.ErrnoException).code === 'ENOENT') {
