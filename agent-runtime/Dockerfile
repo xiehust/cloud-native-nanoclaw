@@ -53,7 +53,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libcups2 \
     libdrm2 \
     libxshmfence1 \
-    git curl ca-certificates \
+    git curl ca-certificates unzip \
     python3 python3-pip python3-venv \
     && rm -rf /var/lib/apt/lists/*
 

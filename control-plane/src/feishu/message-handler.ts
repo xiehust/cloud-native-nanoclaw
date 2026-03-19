@@ -13,7 +13,7 @@ import {
   getUser,
 } from '../services/dynamo.js';
 import { getCachedBot } from '../services/cached-lookups.js';
-import { downloadFeishuResource } from '../channels/feishu.js';
+import { downloadFeishuResource, addFeishuReaction } from '../channels/feishu.js';
 import type { FeishuDomain } from '../channels/feishu.js';
 import { storeFromBuffer } from '../services/attachments.js';
 import type { Attachment, Message, SqsInboundPayload } from '@clawbot/shared';
@@ -303,6 +303,11 @@ export async function handleFeishuMessage({
 
   // Signal that validation passed — caller can start typing indicator etc.
   onProcessing?.(groupJid);
+
+  // Add "OnIt" reaction to acknowledge receipt (fire-and-forget — don't block processing)
+  addFeishuReaction(appId, appSecret, messageId, 'OnIt', domain).catch((err) => {
+    logger.warn({ err, botId, messageId }, 'Failed to add OnIt reaction');
+  });
 
   logger.info(
     {

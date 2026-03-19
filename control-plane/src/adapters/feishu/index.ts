@@ -16,6 +16,12 @@ import {
   sendFeishuMessage,
   sendFeishuCardMessage,
   replyFeishuMessage,
+  uploadFeishuFile,
+  uploadFeishuImage,
+  sendFeishuFileMessage,
+  sendFeishuImageMessage,
+  listFeishuReactions,
+  removeFeishuReaction,
 } from '../../channels/feishu.js';
 import type { FeishuDomain } from '../../channels/feishu.js';
 import { getChannelsByBot } from '../../services/dynamo.js';
@@ -114,7 +120,7 @@ function buildCard(markdownContent: string): Record<string, unknown> {
   return {
     config: { wide_screen_mode: true },
     header: {
-      title: { tag: 'plain_text', content: 'ClawBot' },
+      title: { tag: 'plain_text', content: 'NanoClaw' },
       template: 'blue',
     },
     elements: [{ tag: 'markdown', content: markdownContent }],
@@ -367,6 +373,13 @@ export class FeishuAdapter extends BaseChannelAdapter {
         return;
       }
 
+      // Remove "OnIt" reaction on first reply (best-effort, don't block sending)
+      if (ctx.feishuMessageId) {
+        this.removeAckReaction(appId, appSecret, ctx.feishuMessageId, domain).catch((err) => {
+          this.logger.warn({ err, messageId: ctx.feishuMessageId }, 'Failed to remove OnIt reaction');
+        });
+      }
+
       // Split long messages into chunks
       const chunks = chunkMarkdownText(text);
 
@@ -420,29 +433,94 @@ export class FeishuAdapter extends BaseChannelAdapter {
 
   async sendFile(
     ctx: ReplyContext,
-    _file: Buffer,
+    file: Buffer,
     fileName: string,
-    _mimeType: string,
+    mimeType: string,
     caption?: string,
   ): Promise<void> {
     try {
-      // Feishu file upload API requires creating a file resource first,
-      // which adds complexity. For now, send caption text with file info.
-      const text = caption
-        ? `${caption}\n\n[File: ${fileName}]`
-        : `[File: ${fileName}]`;
+      // Load channel config for this bot
+      const channels = await getChannelsByBot(ctx.botId);
+      const channel = channels.find((ch) => ch.channelType === 'feishu');
+      if (!channel) {
+        this.logger.warn(
+          { botId: ctx.botId },
+          'No Feishu channel configured for bot',
+        );
+        return;
+      }
 
-      await this.sendReply(ctx, text);
+      const creds = await getChannelCredentials(channel.credentialSecretArn);
+      const appId = creds.appId;
+      const appSecret = creds.appSecret;
+      const domain = (creds.domain as FeishuDomain) || 'feishu';
+
+      if (!appId || !appSecret) {
+        this.logger.error(
+          { botId: ctx.botId },
+          'Missing appId or appSecret in Feishu credentials',
+        );
+        return;
+      }
+
+      const chatId =
+        ctx.feishuChatId || ctx.groupJid.replace(/^feishu#/, '');
+      if (!chatId) {
+        this.logger.error(
+          { groupJid: ctx.groupJid },
+          'Could not extract chatId from groupJid for sendFile',
+        );
+        return;
+      }
+
+      const isImage = mimeType.startsWith('image/');
+
+      if (isImage) {
+        // Upload image and send as image message
+        const imageKey = await uploadFeishuImage(
+          appId, appSecret, file, mimeType, domain,
+        );
+        await sendFeishuImageMessage(appId, appSecret, chatId, imageKey, domain);
+      } else {
+        // Upload file and send as file message
+        const fileKey = await uploadFeishuFile(
+          appId, appSecret, file, fileName, mimeType, domain,
+        );
+        await sendFeishuFileMessage(appId, appSecret, chatId, fileKey, domain);
+      }
+
+      // Send caption as a separate text message if provided
+      if (caption) {
+        await this.sendReply(ctx, caption);
+      }
 
       this.logger.info(
-        { botId: ctx.botId, groupJid: ctx.groupJid, fileName },
-        'Feishu file placeholder sent',
+        { botId: ctx.botId, groupJid: ctx.groupJid, fileName, isImage },
+        'Feishu file sent',
       );
     } catch (err) {
       this.logger.error(
         { err, botId: ctx.botId, groupJid: ctx.groupJid, fileName },
         'Failed to send file via Feishu',
       );
+    }
+  }
+
+  /**
+   * Best-effort removal of the "OnIt" reaction added at message receipt.
+   * Lists reactions to find ours, then deletes it.
+   */
+  private async removeAckReaction(
+    appId: string,
+    appSecret: string,
+    messageId: string,
+    domain: FeishuDomain,
+  ): Promise<void> {
+    const reactions = await listFeishuReactions(appId, appSecret, messageId, 'OnIt', domain);
+    // Feishu API only allows deleting reactions you created, so iterating all
+    // is safe — attempts to delete others' reactions will fail silently.
+    for (const r of reactions) {
+      await removeFeishuReaction(appId, appSecret, messageId, r.reactionId, domain);
     }
   }
 }

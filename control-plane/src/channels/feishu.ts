@@ -255,6 +255,226 @@ export async function verifyFeishuCredentials(
   };
 }
 
+// ── File type mapping ──────────────────────────────────────────────────────
+
+type FeishuFileType = 'opus' | 'mp4' | 'pdf' | 'doc' | 'xls' | 'ppt' | 'stream';
+
+const MIME_TO_FILE_TYPE: Record<string, FeishuFileType> = {
+  'audio/ogg': 'opus',
+  'audio/opus': 'opus',
+  'video/mp4': 'mp4',
+  'application/pdf': 'pdf',
+  'application/msword': 'doc',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'doc',
+  'application/vnd.ms-excel': 'xls',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xls',
+  'application/vnd.ms-powerpoint': 'ppt',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'ppt',
+};
+
+function getFeishuFileType(mimeType: string): FeishuFileType {
+  return MIME_TO_FILE_TYPE[mimeType] || 'stream';
+}
+
+// ── File / Image Upload ───────────────────────────────────────────────────
+
+const MAX_FILE_SIZE = 30 * 1024 * 1024; // 30 MB — Feishu file upload limit
+const MAX_IMAGE_SIZE = 10 * 1024 * 1024; // 10 MB — Feishu image upload limit
+
+/**
+ * Upload a file via im/v1/files (multipart/form-data).
+ * Returns the file_key to use in file messages.
+ * https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/reference/im-v1/file/create
+ */
+export async function uploadFeishuFile(
+  appId: string,
+  appSecret: string,
+  file: Buffer,
+  fileName: string,
+  mimeType: string,
+  domain: FeishuDomain = 'feishu',
+): Promise<string> {
+  if (file.length > MAX_FILE_SIZE) {
+    throw new Error(
+      `File too large for Feishu upload: ${(file.length / 1024 / 1024).toFixed(1)} MB (max 30 MB)`,
+    );
+  }
+
+  const token = await getFeishuTenantToken(appId, appSecret, domain);
+  const base = getFeishuApiBase(domain);
+  const url = `${base}/open-apis/im/v1/files`;
+
+  const form = new FormData();
+  form.append('file_type', getFeishuFileType(mimeType));
+  form.append('file_name', fileName);
+  form.append('file', new Blob([file], { type: mimeType }), fileName);
+
+  const resp = await fetch(url, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+    body: form,
+  });
+
+  if (!resp.ok) {
+    const body = await resp.text();
+    throw new Error(
+      `Feishu uploadFile failed: ${resp.status} ${resp.statusText} — ${body}`,
+    );
+  }
+
+  const data = (await resp.json()) as {
+    code: number;
+    msg: string;
+    data?: { file_key: string };
+  };
+  if (data.code !== 0 || !data.data?.file_key) {
+    throw new Error(
+      `Feishu uploadFile error: code=${data.code} msg=${data.msg}`,
+    );
+  }
+
+  return data.data.file_key;
+}
+
+/**
+ * Upload an image via im/v1/images (multipart/form-data).
+ * Returns the image_key to use in image messages.
+ * https://open.feishu.cn/document/server-docs/im-v1/image/create
+ */
+export async function uploadFeishuImage(
+  appId: string,
+  appSecret: string,
+  image: Buffer,
+  mimeType: string,
+  domain: FeishuDomain = 'feishu',
+): Promise<string> {
+  if (image.length > MAX_IMAGE_SIZE) {
+    throw new Error(
+      `Image too large for Feishu upload: ${(image.length / 1024 / 1024).toFixed(1)} MB (max 10 MB)`,
+    );
+  }
+
+  const token = await getFeishuTenantToken(appId, appSecret, domain);
+  const base = getFeishuApiBase(domain);
+  const url = `${base}/open-apis/im/v1/images`;
+
+  const form = new FormData();
+  form.append('image_type', 'message');
+  form.append('image', new Blob([image], { type: mimeType }), 'image');
+
+  const resp = await fetch(url, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+    body: form,
+  });
+
+  if (!resp.ok) {
+    const body = await resp.text();
+    throw new Error(
+      `Feishu uploadImage failed: ${resp.status} ${resp.statusText} — ${body}`,
+    );
+  }
+
+  const data = (await resp.json()) as {
+    code: number;
+    msg: string;
+    data?: { image_key: string };
+  };
+  if (data.code !== 0 || !data.data?.image_key) {
+    throw new Error(
+      `Feishu uploadImage error: code=${data.code} msg=${data.msg}`,
+    );
+  }
+
+  return data.data.image_key;
+}
+
+// ── Send file / image messages ────────────────────────────────────────────
+
+/**
+ * Send a file message via im.message.create with msg_type='file'.
+ */
+export async function sendFeishuFileMessage(
+  appId: string,
+  appSecret: string,
+  chatId: string,
+  fileKey: string,
+  domain: FeishuDomain = 'feishu',
+): Promise<void> {
+  const token = await getFeishuTenantToken(appId, appSecret, domain);
+  const base = getFeishuApiBase(domain);
+  const url = `${base}/open-apis/im/v1/messages?receive_id_type=chat_id`;
+
+  const resp = await fetch(url, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      receive_id: chatId,
+      msg_type: 'file',
+      content: JSON.stringify({ file_key: fileKey }),
+    }),
+  });
+
+  if (!resp.ok) {
+    const body = await resp.text();
+    throw new Error(
+      `Feishu sendFileMessage failed: ${resp.status} ${resp.statusText} — ${body}`,
+    );
+  }
+
+  const data = (await resp.json()) as { code: number; msg: string };
+  if (data.code !== 0) {
+    throw new Error(
+      `Feishu sendFileMessage error: code=${data.code} msg=${data.msg}`,
+    );
+  }
+}
+
+/**
+ * Send an image message via im.message.create with msg_type='image'.
+ */
+export async function sendFeishuImageMessage(
+  appId: string,
+  appSecret: string,
+  chatId: string,
+  imageKey: string,
+  domain: FeishuDomain = 'feishu',
+): Promise<void> {
+  const token = await getFeishuTenantToken(appId, appSecret, domain);
+  const base = getFeishuApiBase(domain);
+  const url = `${base}/open-apis/im/v1/messages?receive_id_type=chat_id`;
+
+  const resp = await fetch(url, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      receive_id: chatId,
+      msg_type: 'image',
+      content: JSON.stringify({ image_key: imageKey }),
+    }),
+  });
+
+  if (!resp.ok) {
+    const body = await resp.text();
+    throw new Error(
+      `Feishu sendImageMessage failed: ${resp.status} ${resp.statusText} — ${body}`,
+    );
+  }
+
+  const data = (await resp.json()) as { code: number; msg: string };
+  if (data.code !== 0) {
+    throw new Error(
+      `Feishu sendImageMessage error: code=${data.code} msg=${data.msg}`,
+    );
+  }
+}
+
 /**
  * Download a message attachment (image, file, etc.) via im.message.resources.
  * GET /open-apis/im/v1/messages/:message_id/resources/:file_key?type=...
@@ -289,4 +509,140 @@ export async function downloadFeishuResource(
   }
 
   return resp.arrayBuffer();
+}
+
+// ── Reactions ─────────────────────────────────────────────────────────────
+
+/**
+ * Add an emoji reaction to a message.
+ * POST /open-apis/im/v1/messages/:message_id/reactions
+ * https://open.feishu.cn/document/server-docs/im-v1/message-reaction/create
+ */
+export async function addFeishuReaction(
+  appId: string,
+  appSecret: string,
+  messageId: string,
+  emojiType: string,
+  domain: FeishuDomain = 'feishu',
+): Promise<string | undefined> {
+  const token = await getFeishuTenantToken(appId, appSecret, domain);
+  const base = getFeishuApiBase(domain);
+  const url = `${base}/open-apis/im/v1/messages/${encodeURIComponent(messageId)}/reactions`;
+
+  const resp = await fetch(url, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      reaction_type: { emoji_type: emojiType },
+    }),
+  });
+
+  if (!resp.ok) {
+    const body = await resp.text();
+    throw new Error(
+      `Feishu addReaction failed: ${resp.status} ${resp.statusText} — ${body}`,
+    );
+  }
+
+  const data = (await resp.json()) as {
+    code: number;
+    msg: string;
+    data?: { reaction_id: string };
+  };
+  if (data.code !== 0) {
+    throw new Error(
+      `Feishu addReaction error: code=${data.code} msg=${data.msg}`,
+    );
+  }
+
+  return data.data?.reaction_id;
+}
+
+/**
+ * Remove a specific emoji reaction from a message.
+ * DELETE /open-apis/im/v1/messages/:message_id/reactions/:reaction_id
+ * https://open.feishu.cn/document/server-docs/im-v1/message-reaction/delete
+ */
+export async function removeFeishuReaction(
+  appId: string,
+  appSecret: string,
+  messageId: string,
+  reactionId: string,
+  domain: FeishuDomain = 'feishu',
+): Promise<void> {
+  const token = await getFeishuTenantToken(appId, appSecret, domain);
+  const base = getFeishuApiBase(domain);
+  const url = `${base}/open-apis/im/v1/messages/${encodeURIComponent(messageId)}/reactions/${encodeURIComponent(reactionId)}`;
+
+  const resp = await fetch(url, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  if (!resp.ok) {
+    const body = await resp.text();
+    throw new Error(
+      `Feishu removeReaction failed: ${resp.status} ${resp.statusText} — ${body}`,
+    );
+  }
+
+  const data = (await resp.json()) as { code: number; msg: string };
+  if (data.code !== 0) {
+    throw new Error(
+      `Feishu removeReaction error: code=${data.code} msg=${data.msg}`,
+    );
+  }
+}
+
+/**
+ * List reactions on a message, optionally filtered by emoji type.
+ * GET /open-apis/im/v1/messages/:message_id/reactions?reaction_type=...
+ * Returns reaction IDs so we can find and remove our own.
+ */
+export async function listFeishuReactions(
+  appId: string,
+  appSecret: string,
+  messageId: string,
+  emojiType: string,
+  domain: FeishuDomain = 'feishu',
+): Promise<Array<{ reactionId: string; operatorId: string }>> {
+  const token = await getFeishuTenantToken(appId, appSecret, domain);
+  const base = getFeishuApiBase(domain);
+  const url = `${base}/open-apis/im/v1/messages/${encodeURIComponent(messageId)}/reactions?reaction_type=${encodeURIComponent(emojiType)}`;
+
+  const resp = await fetch(url, {
+    method: 'GET',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  if (!resp.ok) {
+    const body = await resp.text();
+    throw new Error(
+      `Feishu listReactions failed: ${resp.status} ${resp.statusText} — ${body}`,
+    );
+  }
+
+  const data = (await resp.json()) as {
+    code: number;
+    msg: string;
+    data?: {
+      items?: Array<{
+        reaction_id: string;
+        operator: { operator_id: string; operator_type: string };
+      }>;
+    };
+  };
+  if (data.code !== 0) {
+    throw new Error(
+      `Feishu listReactions error: code=${data.code} msg=${data.msg}`,
+    );
+  }
+
+  return (data.data?.items || []).map((item) => ({
+    reactionId: item.reaction_id,
+    operatorId: item.operator.operator_id,
+  }));
 }
