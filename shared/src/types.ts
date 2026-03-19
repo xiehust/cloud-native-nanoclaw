@@ -150,6 +150,10 @@ export interface Session {
   s3SessionPath: string;
   lastActiveAt: string;
   status: 'active' | 'idle' | 'terminated';
+  /** Model used in the last invocation (for change detection) */
+  lastModel?: string;
+  /** Model provider used in the last invocation */
+  lastModelProvider?: ModelProvider;
 }
 
 // --- SQS Message Payloads ---
@@ -209,6 +213,8 @@ export interface InvocationPayload {
   maxTurns?: number;
   /** Feishu/Lark credentials + tool config (present when channelType is 'feishu') */
   feishu?: FeishuInvocationConfig;
+  /** When true, agent runtime should NOT resume existing session (model/provider changed) */
+  forceNewSession?: boolean;
 }
 
 /** Feishu/Lark config passed to agent runtime for MCP tool registration. */

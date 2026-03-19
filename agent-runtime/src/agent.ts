@@ -31,7 +31,7 @@ import {
 } from '@aws-sdk/client-secrets-manager';
 import type pino from 'pino';
 import type { InvocationPayload, InvocationResult, Attachment } from '@clawbot/shared';
-import { syncFromS3, syncToS3, type SyncPaths } from './session.js';
+import { syncFromS3, syncToS3, clearSessionDirectory, syncMemoryOnlyFromS3, type SyncPaths } from './session.js';
 import { buildAppendContent } from './system-prompt.js';
 import { getScopedClients } from './scoped-credentials.js';
 import { setBusy, setIdle } from './server.js';
@@ -149,8 +149,20 @@ async function _handleInvocation(
     learningsPrefix: memoryPaths.learnings,
   };
 
-  logger.info({ sessionPath, groupJid }, 'Syncing session from S3');
-  await syncFromS3(s3, SESSION_BUCKET, syncPaths, logger);
+  // Model/provider change: clean local state and S3 session, sync memory only
+  const forceNewSession = !!payload.forceNewSession;
+  if (forceNewSession) {
+    logger.info(
+      { botId, groupJid, model: payload.model, modelProvider: payload.modelProvider },
+      'Model/provider change detected, resetting session',
+    );
+    await cleanLocalWorkspace();
+    await clearSessionDirectory(s3, SESSION_BUCKET, sessionPath, logger);
+    await syncMemoryOnlyFromS3(s3, SESSION_BUCKET, syncPaths, logger);
+  } else {
+    logger.info({ sessionPath, groupJid }, 'Syncing session from S3');
+    await syncFromS3(s3, SESSION_BUCKET, syncPaths, logger);
+  }
 
   // 2b. Download inbound attachments to /workspace/group/attachments/
   if (payload.attachments?.length) {
@@ -221,6 +233,7 @@ async function _handleInvocation(
     userId,
     payload,
     feishuEnv,
+    forceNewSession,
     logger,
   });
 
@@ -251,6 +264,7 @@ interface QueryParams {
   userId: string;
   payload: InvocationPayload;
   feishuEnv: FeishuMcpEnv | null;
+  forceNewSession: boolean;
   logger: pino.Logger;
 }
 
@@ -286,7 +300,7 @@ async function runAgentQuery(params: QueryParams): Promise<InvocationResult> {
         model: payload.model || DEFAULT_MODEL,
         cwd: '/workspace/group',
         additionalDirectories: extraDirs.length > 0 ? extraDirs : undefined,
-        continue: true,
+        continue: !params.forceNewSession,
         systemPrompt: {
           type: 'preset' as const,
           preset: 'claude_code' as const,

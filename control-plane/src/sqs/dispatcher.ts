@@ -18,7 +18,7 @@ import type {
   SqsTaskPayload,
   Message,
 } from '@clawbot/shared';
-import type { ModelProvider } from '@clawbot/shared';
+import type { ModelProvider, Session } from '@clawbot/shared';
 import { config } from '../config.js';
 import {
   getGroup,
@@ -26,6 +26,7 @@ import {
   ensureUser,
   putMessage,
   putSession,
+  getSession,
   getTask,
   updateUserUsage,
   checkAndAcquireAgentSlot,
@@ -39,6 +40,17 @@ import type { ReplyContext, ReplyOptions } from '@clawbot/shared/channel-adapter
 import type { Logger } from 'pino';
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
+
+/** Detect model/provider change that requires session reset */
+export function shouldResetSession(
+  session: Session | null,
+  currentModel: string | undefined,
+  currentProvider: ModelProvider | undefined,
+): boolean {
+  if (!session) return false;
+  if (!session.lastModel && !session.lastModelProvider) return false;
+  return session.lastModel !== currentModel || session.lastModelProvider !== currentProvider;
+}
 
 /** Check if agent result is a silent NO_REPLY (nothing to send) */
 function isSilentReply(result: string | null | undefined): boolean {
@@ -182,6 +194,21 @@ async function dispatchMessage(
     // Resolve provider credentials (Anthropic API key + base URL) if bot uses anthropic-api
     const providerCreds = await resolveProviderCredentials(bot, payload.userId, logger);
 
+    // 6b. Check for model/provider change → force new session if needed
+    const effectiveProvider = providerCreds.modelProvider ?? bot.modelProvider;
+    const existingSession = await getSession(payload.botId, payload.groupJid);
+    const forceNewSession = shouldResetSession(existingSession, bot.model, effectiveProvider);
+    if (forceNewSession) {
+      logger.info(
+        {
+          botId: payload.botId, groupJid: payload.groupJid,
+          oldModel: existingSession?.lastModel, newModel: bot.model,
+          oldProvider: existingSession?.lastModelProvider, newProvider: effectiveProvider,
+        },
+        'Model/provider change detected, forcing new session',
+      );
+    }
+
     // 7. Build invocation payload
     const invocationPayload: InvocationPayload = {
       botId: payload.botId,
@@ -204,6 +231,7 @@ async function dispatchMessage(
       }),
       ...(feishuConfig && { feishu: feishuConfig }),
       ...providerCreds,
+      ...(forceNewSession && { forceNewSession: true }),
     };
 
     logger.info(
@@ -260,7 +288,7 @@ async function dispatchMessage(
       );
     }
 
-    // 10. Update session
+    // 10. Update session (always record model/provider for change detection)
     if (result.newSessionId) {
       await putSession({
         botId: payload.botId,
@@ -269,6 +297,8 @@ async function dispatchMessage(
         s3SessionPath: invocationPayload.sessionPath,
         lastActiveAt: new Date().toISOString(),
         status: 'active',
+        lastModel: bot.model,
+        lastModelProvider: effectiveProvider,
       });
     }
 
@@ -323,6 +353,17 @@ async function dispatchTask(
 
   const providerCreds = await resolveProviderCredentials(bot, payload.userId, logger);
 
+  // Check for model/provider change
+  const effectiveProvider = providerCreds.modelProvider ?? bot.modelProvider;
+  const existingSession = await getSession(payload.botId, payload.groupJid);
+  const forceNewSession = shouldResetSession(existingSession, bot.model, effectiveProvider);
+  if (forceNewSession) {
+    logger.info(
+      { botId: payload.botId, groupJid: payload.groupJid },
+      'Model/provider change detected for scheduled task, forcing new session',
+    );
+  }
+
   const invocationPayload: InvocationPayload = {
     botId: payload.botId,
     botName: bot.name,
@@ -342,6 +383,7 @@ async function dispatchTask(
     isGroupChat: group?.isGroup,
     ...(feishuConfig && { feishu: feishuConfig }),
     ...providerCreds,
+    ...(forceNewSession && { forceNewSession: true }),
   };
 
   const result = await invokeAgent(invocationPayload, logger);
@@ -376,6 +418,20 @@ async function dispatchTask(
         );
       }
     }
+  }
+
+  // Update session with model/provider for change detection
+  if (result.newSessionId) {
+    await putSession({
+      botId: payload.botId,
+      groupJid: payload.groupJid,
+      agentcoreSessionId: result.newSessionId,
+      s3SessionPath: invocationPayload.sessionPath,
+      lastActiveAt: new Date().toISOString(),
+      status: 'active',
+      lastModel: bot.model,
+      lastModelProvider: effectiveProvider,
+    });
   }
 }
 

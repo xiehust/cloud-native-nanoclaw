@@ -81,6 +81,66 @@ export async function syncToS3(
   }
 }
 
+/**
+ * Delete all objects under the session S3 prefix.
+ * Used when model/provider changes make existing session JSONL incompatible.
+ */
+export async function clearSessionDirectory(
+  s3: S3Client,
+  bucket: string,
+  sessionPrefix: string,
+  logger: pino.Logger,
+): Promise<void> {
+  let continuationToken: string | undefined;
+  let deletedCount = 0;
+
+  do {
+    const resp = await s3.send(
+      new ListObjectsV2Command({
+        Bucket: bucket,
+        Prefix: sessionPrefix,
+        ContinuationToken: continuationToken,
+      }),
+    );
+
+    for (const obj of resp.Contents ?? []) {
+      if (!obj.Key) continue;
+      await deleteS3Object(s3, bucket, obj.Key, logger);
+      deletedCount++;
+    }
+
+    continuationToken = resp.IsTruncated ? resp.NextContinuationToken : undefined;
+  } while (continuationToken);
+
+  if (deletedCount > 0) {
+    logger.info({ sessionPrefix, deletedCount }, 'Cleared old session files from S3');
+  }
+}
+
+/**
+ * Download memory files only (bot CLAUDE.md, group workspace, learnings) — no session state.
+ * Used during session reset to preserve memory while discarding incompatible session JSONL.
+ */
+export async function syncMemoryOnlyFromS3(
+  s3: S3Client,
+  bucket: string,
+  paths: SyncPaths,
+  logger: pino.Logger,
+): Promise<void> {
+  // Skip step 1 (session directory) — that's the incompatible data
+
+  // 2. Download bot CLAUDE.md
+  await downloadFile(s3, bucket, paths.botClaude, join(CLAUDE_DIR, 'CLAUDE.md'), logger);
+
+  // 3. Download group workspace
+  await downloadDirectory(s3, bucket, paths.groupPrefix, join(WORKSPACE_BASE, 'group'), logger);
+
+  // 4. Download learnings
+  if (paths.learningsPrefix) {
+    await downloadDirectory(s3, bucket, paths.learningsPrefix, join(WORKSPACE_BASE, 'learnings'), logger);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------

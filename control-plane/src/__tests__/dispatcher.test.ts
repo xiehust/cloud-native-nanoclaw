@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { InvocationPayload, InvocationResult, SqsInboundPayload, SqsTaskPayload } from '@clawbot/shared';
+import type { InvocationPayload, InvocationResult, Session, SqsInboundPayload, SqsTaskPayload } from '@clawbot/shared';
 import type { Message as SQSMessage } from '@aws-sdk/client-sqs';
 import type { Logger } from 'pino';
 
@@ -159,6 +159,7 @@ describe('dispatch NO_REPLY handling', () => {
   const mockCheckAndAcquireAgentSlot = vi.fn();
   const mockReleaseAgentSlot = vi.fn();
   const mockGetGroup = vi.fn();
+  const mockGetSession = vi.fn();
   const mockGetTask = vi.fn();
   const mockGetCachedBot = vi.fn();
 
@@ -187,6 +188,7 @@ describe('dispatch NO_REPLY handling', () => {
     mockCheckAndAcquireAgentSlot.mockReset();
     mockReleaseAgentSlot.mockReset();
     mockGetGroup.mockReset();
+    mockGetSession.mockReset();
     mockGetTask.mockReset();
     mockGetCachedBot.mockReset();
     (mockLogger.info as ReturnType<typeof vi.fn>).mockReset();
@@ -197,6 +199,7 @@ describe('dispatch NO_REPLY handling', () => {
     mockCheckAndAcquireAgentSlot.mockResolvedValue(true);
     mockReleaseAgentSlot.mockResolvedValue(undefined);
     mockGetGroup.mockResolvedValue({ isGroup: false, channelType: 'telegram' });
+    mockGetSession.mockResolvedValue(null);
     mockGetTask.mockResolvedValue({ status: 'active', prompt: 'Run daily check' });
     mockPutMessage.mockResolvedValue(undefined);
     mockPutSession.mockResolvedValue(undefined);
@@ -218,6 +221,7 @@ describe('dispatch NO_REPLY handling', () => {
 
     vi.doMock('../services/dynamo.js', () => ({
       getGroup: mockGetGroup,
+      getSession: mockGetSession,
       getRecentMessages: vi.fn(),
       ensureUser: mockEnsureUser,
       putMessage: mockPutMessage,
@@ -322,5 +326,74 @@ describe('dispatch NO_REPLY handling', () => {
 
     expect(mockPutMessage).toHaveBeenCalledOnce();
     expect(mockSendReply).toHaveBeenCalledOnce();
+  });
+});
+
+// ── shouldResetSession unit tests ───────────────────────────────────────────
+
+describe('shouldResetSession', () => {
+  // Import directly — this is a pure function with no side effects
+  let shouldResetSession: typeof import('../sqs/dispatcher.js').shouldResetSession;
+
+  beforeEach(async () => {
+    vi.resetModules();
+
+    // Minimal mocks so the module can load
+    vi.doMock('@aws-sdk/client-bedrock-agentcore', () => ({
+      BedrockAgentCoreClient: vi.fn().mockImplementation(() => ({})),
+      InvokeAgentRuntimeCommand: vi.fn(),
+    }));
+    vi.doMock('../config.js', () => ({ config: { region: 'us-east-1', agentcore: {} } }));
+    vi.doMock('../services/dynamo.js', () => ({}));
+    vi.doMock('../services/secrets.js', () => ({}));
+    vi.doMock('../services/cached-lookups.js', () => ({}));
+    vi.doMock('../adapters/registry.js', () => ({}));
+
+    const mod = await import('../sqs/dispatcher.js');
+    shouldResetSession = mod.shouldResetSession;
+  });
+
+  const baseSession: Session = {
+    botId: 'bot-1',
+    groupJid: 'tg:123',
+    agentcoreSessionId: 'sess-1',
+    s3SessionPath: 'path/',
+    lastActiveAt: new Date().toISOString(),
+    status: 'active',
+    lastModel: 'claude-sonnet',
+    lastModelProvider: 'bedrock',
+  };
+
+  it('returns false when session is null (first invocation)', () => {
+    expect(shouldResetSession(null, 'claude-sonnet', 'bedrock')).toBe(false);
+  });
+
+  it('returns false for legacy session without lastModel/lastModelProvider', () => {
+    const legacy: Session = { ...baseSession, lastModel: undefined, lastModelProvider: undefined };
+    expect(shouldResetSession(legacy, 'claude-sonnet', 'bedrock')).toBe(false);
+  });
+
+  it('returns false when model and provider match', () => {
+    expect(shouldResetSession(baseSession, 'claude-sonnet', 'bedrock')).toBe(false);
+  });
+
+  it('returns true when model changed', () => {
+    expect(shouldResetSession(baseSession, 'minimax-m2.5', 'bedrock')).toBe(true);
+  });
+
+  it('returns true when provider changed', () => {
+    expect(shouldResetSession(baseSession, 'claude-sonnet', 'anthropic-api')).toBe(true);
+  });
+
+  it('returns true when both changed', () => {
+    expect(shouldResetSession(baseSession, 'minimax-m2.5', 'anthropic-api')).toBe(true);
+  });
+
+  it('returns true when model becomes undefined', () => {
+    expect(shouldResetSession(baseSession, undefined, 'bedrock')).toBe(true);
+  });
+
+  it('returns true when provider becomes undefined', () => {
+    expect(shouldResetSession(baseSession, 'claude-sonnet', undefined)).toBe(true);
   });
 });
