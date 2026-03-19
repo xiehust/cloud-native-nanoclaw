@@ -1,32 +1,65 @@
-import { Link } from 'react-router-dom';
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useLocation } from 'react-router-dom';
 import { useAuth } from '../lib/auth';
+import { bots as botsApi, user as userApi, Bot } from '../lib/api';
+import Sidebar from './Sidebar';
 
 export default function Layout({ children }: { children: React.ReactNode }) {
   const { user, logout } = useAuth();
+  const location = useLocation();
+  const [collapsed, setCollapsed] = useState(() => localStorage.getItem('sidebar-collapsed') === 'true');
+  const [botList, setBotList] = useState<Bot[]>([]);
+  const [isAdmin, setIsAdmin] = useState(false);
+
+  // Extract botId from the URL path since Layout is outside <Route> context
+  const activeBotId = useMemo(() => {
+    const match = location.pathname.match(/^\/bots\/([^/]+)/);
+    return match?.[1];
+  }, [location.pathname]);
+
+  const loadBots = useCallback(async () => {
+    try {
+      const [bots, me] = await Promise.all([botsApi.list(), userApi.me()]);
+      setBotList(bots);
+      setIsAdmin(me.isAdmin || false);
+    } catch (err) {
+      console.error('Failed to load sidebar data:', err);
+    }
+  }, []);
+
+  useEffect(() => { loadBots(); }, [loadBots]);
+
+  const handleToggle = () => {
+    const next = !collapsed;
+    setCollapsed(next);
+    localStorage.setItem('sidebar-collapsed', String(next));
+  };
+
+  const handleCreateBot = async (name: string) => {
+    try {
+      await botsApi.create({ name });
+      await loadBots();
+    } catch (err) {
+      console.error('Failed to create bot:', err);
+    }
+  };
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Top navbar */}
-      <nav className="bg-white border-b border-gray-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between h-16">
-            <div className="flex items-center">
-              <Link to="/" className="text-xl font-bold text-indigo-600">NanoClaw Cloud</Link>
-            </div>
-            <div className="flex items-center gap-4">
-              <Link to="/settings" className="text-sm text-gray-600 hover:text-gray-900 font-medium">Settings</Link>
-              {user?.isAdmin && (
-                <Link to="/admin/users" className="text-sm text-indigo-600 hover:text-indigo-500 font-medium">Admin</Link>
-              )}
-              <span className="text-sm text-gray-600">{user?.email}</span>
-              <button onClick={logout} className="text-sm text-gray-500 hover:text-gray-700">Sign out</button>
-            </div>
-          </div>
+    <div className="flex h-screen overflow-hidden bg-slate-50">
+      <Sidebar
+        collapsed={collapsed}
+        onToggle={handleToggle}
+        bots={botList}
+        activeBotId={activeBotId}
+        userEmail={user?.email || ''}
+        isAdmin={isAdmin}
+        onCreateBot={handleCreateBot}
+        onLogout={logout}
+      />
+      <main className="flex-1 overflow-y-auto">
+        <div className="mx-auto max-w-7xl px-6 py-8">
+          {children}
         </div>
-      </nav>
-      {/* Main content */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {children}
       </main>
     </div>
   );
