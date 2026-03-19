@@ -14,10 +14,10 @@ export interface UserQuota {
 }
 
 export const DEFAULT_QUOTA: UserQuota = {
-  maxBots: 5,
+  maxBots: 10,
   maxGroupsPerBot: 20,
   maxTasksPerBot: 50,
-  maxConcurrentAgents: 3,
+  maxConcurrentAgents: 10,
   maxMonthlyTokens: 100_000_000,
 };
 
