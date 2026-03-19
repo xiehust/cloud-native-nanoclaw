@@ -190,10 +190,34 @@ export const admin = {
   updatePlan: (userId: string, plan: string) => request<{ ok: boolean }>(`/admin/${userId}/plan`, { method: 'PUT', body: JSON.stringify({ plan }) }),
 };
 
+// File Browser types
+export interface FileEntry {
+  key: string;
+  name: string;
+  isFolder: boolean;
+  size?: number;
+  lastModified?: string;
+}
+
+export interface FileContent {
+  content: string;
+  size: number;
+  lastModified?: string;
+  contentType?: string;
+}
+
 // Memory API (CLAUDE.md files)
 export interface MemoryResponse {
   content: string;
 }
+
+// File Browser API
+export const files = {
+  list: (botId: string, prefix?: string) =>
+    request<{ entries: FileEntry[] }>(`/bots/${botId}/files${prefix ? `?prefix=${encodeURIComponent(prefix)}` : ''}`),
+  content: (botId: string, key: string) =>
+    request<FileContent>(`/bots/${botId}/files/content?key=${encodeURIComponent(key)}`),
+};
 
 export const memory = {
   getShared: () => request<MemoryResponse>('/shared-memory'),
