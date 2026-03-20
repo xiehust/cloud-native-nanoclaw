@@ -126,6 +126,18 @@ export class AgentStack extends cdk.Stack {
       }),
     );
 
+    // Secrets Manager — read channel credentials (feishu, etc.) for MCP tool config
+    this.agentBaseRole.addToPolicy(
+      new iam.PolicyStatement({
+        sid: 'SecretsManagerRead',
+        effect: iam.Effect.ALLOW,
+        actions: ['secretsmanager:GetSecretValue'],
+        resources: [
+          `arn:aws:secretsmanager:${this.region}:${this.account}:secret:nanoclawbot/${stage}/*`,
+        ],
+      }),
+    );
+
     // Trust policy: allow AgentBaseRole to AssumeRole + TagSession (for ABAC)
     this.agentScopedRole.assumeRolePolicy?.addStatements(
       new iam.PolicyStatement({

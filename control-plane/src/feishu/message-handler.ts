@@ -48,7 +48,7 @@ export interface FeishuMessageBody {
   create_time: string;
   chat_id: string;
   chat_type: 'p2p' | 'group';
-  message_type: string; // text, image, file, audio, rich_text, etc.
+  message_type: string; // text, post, image, file, audio, etc.
   content: string; // JSON string
   mentions?: FeishuMention[];
 }
@@ -101,12 +101,18 @@ function shouldTrigger(
   triggerPattern: string,
   mentions: FeishuMention[] | undefined,
   botOpenId: string,
+  hasMedia: boolean = false,
 ): boolean {
   // Private (p2p) chats always trigger
   if (chatType === 'p2p') return true;
 
   // In groups, check if bot was @mentioned
   if (isBotMentioned(mentions, botOpenId)) return true;
+
+  // Media messages (image/file) in groups also trigger — users send
+  // attachments to the bot intentionally; standalone images without
+  // text or @mention should still be processed.
+  if (hasMedia) return true;
 
   // Check trigger pattern
   if (!triggerPattern) return false;
@@ -121,7 +127,9 @@ function shouldTrigger(
 /**
  * Parse Feishu message content JSON and extract text.
  * Text messages: { "text": "@_user_1 hello" }
- * Rich text messages: { "title": "...", "content": [[{ "tag": "text", "text": "..." }]] }
+ * Post (rich text) messages: { "title": "...", "content": [[{ "tag": "text", "text": "..." }, { "tag": "img", ... }]] }
+ *
+ * Note: Feishu uses "post" (not "rich_text") as the message_type for rich text messages.
  */
 function parseFeishuContent(messageType: string, contentJson: string): string {
   try {
@@ -131,8 +139,8 @@ function parseFeishuContent(messageType: string, contentJson: string): string {
       return parsed.text || '';
     }
 
-    if (messageType === 'rich_text') {
-      // rich_text has nested content arrays: [[{ tag: "text", text: "..." }, ...]]
+    if (messageType === 'post') {
+      // Post messages have nested content arrays: [[{ tag: "text", text: "..." }, { tag: "img", ... }]]
       const lines: string[] = [];
       const title = parsed.title;
       if (title) lines.push(title);
@@ -207,7 +215,21 @@ export async function handleFeishuMessage({
   // Parse message content
   const rawContent = parseFeishuContent(feishuMsg.message_type, feishuMsg.content);
   let content = stripAtMentions(rawContent);
-  const hasMedia = ['image', 'file', 'audio'].includes(feishuMsg.message_type);
+
+  // Detect media: standalone image/file/audio, or post messages containing img tags
+  let hasMedia = ['image', 'file', 'audio'].includes(feishuMsg.message_type);
+
+  // Pre-parse post content once (reused for hasMedia detection and image download)
+  interface PostElement { tag: string; image_key?: string; text?: string; href?: string }
+  let postImgElements: PostElement[] = [];
+  if (feishuMsg.message_type === 'post') {
+    try {
+      const parsed = JSON.parse(feishuMsg.content);
+      const elements = ((parsed.content as PostElement[][])?.flat() ?? []);
+      postImgElements = elements.filter((el) => el.tag === 'img');
+      if (postImgElements.length > 0) hasMedia = true;
+    } catch { /* ignore parse errors */ }
+  }
 
   // Audio: append unsupported note
   if (feishuMsg.message_type === 'audio') {
@@ -250,6 +272,26 @@ export async function handleFeishuMessage({
       }
     } catch (err) {
       logger.warn({ err, botId }, 'Failed to download Feishu attachment');
+    }
+  }
+
+  // Process inline images from post (rich text) messages
+  if (appId && appSecret && postImgElements.length > 0) {
+    for (let i = 0; i < postImgElements.length; i++) {
+      try {
+        const imageKey = postImgElements[i].image_key;
+        if (!imageKey) continue;
+        const fileName = sanitizeFileName(`post_image_${i}_${imageKey.slice(-8)}`);
+        const data = await downloadFeishuResource(
+          appId, appSecret, messageId, imageKey, domain, 'image',
+        );
+        const att = await storeFromBuffer(
+          bot.userId, botId, messageId, data, fileName, 'image/png',
+        );
+        if (att) attachments.push(att);
+      } catch (err) {
+        logger.warn({ err, botId, index: i }, 'Failed to download post inline image');
+      }
     }
   }
 
@@ -296,7 +338,7 @@ export async function handleFeishuMessage({
   await putMessage(msg);
 
   // Check trigger (use mentions array for bot detection, raw content for pattern matching)
-  if (!shouldTrigger(rawContent, feishuMsg.chat_type, bot.triggerPattern, feishuMsg.mentions, botOpenId)) {
+  if (!shouldTrigger(rawContent, feishuMsg.chat_type, bot.triggerPattern, feishuMsg.mentions, botOpenId, hasMedia)) {
     logger.debug({ botId, groupJid }, 'Message did not match trigger');
     return;
   }
