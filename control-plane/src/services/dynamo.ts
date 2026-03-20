@@ -296,13 +296,15 @@ export async function updateUserPlan(
   plan: 'free' | 'pro' | 'enterprise',
 ): Promise<void> {
   userIdSchema.parse(userId);
+  const planQuotas = await getPlanQuotas();
+  const quota = planQuotas[plan];
   await client.send(
     new UpdateCommand({
       TableName: config.tables.users,
       Key: { userId },
-      UpdateExpression: 'SET #plan = :plan',
-      ExpressionAttributeNames: { '#plan': 'plan' },
-      ExpressionAttributeValues: { ':plan': plan },
+      UpdateExpression: 'SET #plan = :plan, #quota = :quota',
+      ExpressionAttributeNames: { '#plan': 'plan', '#quota': 'quota' },
+      ExpressionAttributeValues: { ':plan': plan, ':quota': quota },
     }),
   );
 }
