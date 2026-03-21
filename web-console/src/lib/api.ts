@@ -159,6 +159,7 @@ export interface AdminUser {
   email: string;
   displayName: string;
   plan: string;
+  status?: string;
   quota: {
     maxBots: number;
     maxGroupsPerBot: number;
@@ -188,6 +189,18 @@ export const admin = {
   getUser: (userId: string) => request<AdminUser>(`/admin/${userId}`),
   updateQuota: (userId: string, quota: UpdateQuotaRequest) => request<{ ok: boolean }>(`/admin/${userId}/quota`, { method: 'PUT', body: JSON.stringify(quota) }),
   updatePlan: (userId: string, plan: string) => request<{ ok: boolean }>(`/admin/${userId}/plan`, { method: 'PUT', body: JSON.stringify({ plan }) }),
+  createUser: (email: string, plan?: string) =>
+    request<{ ok: boolean; userId: string; email: string }>('/admin/users', {
+      method: 'POST',
+      body: JSON.stringify({ email, plan: plan || 'free' }),
+    }),
+  updateUserStatus: (userId: string, status: string) =>
+    request<{ ok: boolean }>(`/admin/${userId}/status`, {
+      method: 'PUT',
+      body: JSON.stringify({ status }),
+    }),
+  deleteUser: (userId: string) =>
+    request<{ ok: boolean }>(`/admin/${userId}`, { method: 'DELETE' }),
 };
 
 // File Browser types

@@ -1,22 +1,18 @@
 import { useState, useEffect } from 'react';
-import { useParams, Link } from 'react-router-dom';
-import { ArrowLeft } from 'lucide-react';
+import { useParams, Link, useNavigate } from 'react-router-dom';
+import { ArrowLeft, Ban, PlayCircle, Trash2 } from 'lucide-react';
 import { admin, AdminUser } from '../../lib/api';
-
-function formatDate(dateStr?: string): string {
-  if (!dateStr) return '—';
-  const d = new Date(dateStr);
-  return isNaN(d.getTime()) ? '—' : d.toLocaleDateString();
-}
+import Badge from '../../components/Badge';
 
 function formatDateTime(dateStr?: string): string {
-  if (!dateStr) return '—';
+  if (!dateStr) return '\u2014';
   const d = new Date(dateStr);
-  return isNaN(d.getTime()) ? '—' : d.toLocaleString();
+  return isNaN(d.getTime()) ? '\u2014' : d.toLocaleString();
 }
 
 export default function UserDetail() {
   const { userId } = useParams<{ userId: string }>();
+  const navigate = useNavigate();
   const [user, setUser] = useState<AdminUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -32,7 +28,7 @@ export default function UserDetail() {
   });
   const [plan, setPlan] = useState<string>('free');
 
-  useEffect(() => {
+  function loadUser() {
     if (!userId) return;
     admin.getUser(userId)
       .then((u) => {
@@ -42,7 +38,9 @@ export default function UserDetail() {
       })
       .catch((err) => console.error('Failed to load user:', err))
       .finally(() => setLoading(false));
-  }, [userId]);
+  }
+
+  useEffect(() => { loadUser(); }, [userId]);
 
   async function saveQuota() {
     if (!userId) return;
@@ -72,8 +70,46 @@ export default function UserDetail() {
     }
   }
 
+  async function handleSuspend() {
+    if (!userId) return;
+    if (!window.confirm('Suspend this user? They will lose access to the platform.')) return;
+    try {
+      await admin.updateUserStatus(userId, 'suspended');
+      setMessage('User suspended.');
+      loadUser();
+    } catch (err) {
+      setMessage(`Error: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    }
+  }
+
+  async function handleActivate() {
+    if (!userId) return;
+    if (!window.confirm('Activate this user?')) return;
+    try {
+      await admin.updateUserStatus(userId, 'active');
+      setMessage('User activated.');
+      loadUser();
+    } catch (err) {
+      setMessage(`Error: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    }
+  }
+
+  async function handleDelete() {
+    if (!userId) return;
+    if (!window.confirm('Delete this user? This action cannot be undone.')) return;
+    try {
+      await admin.deleteUser(userId);
+      setMessage('User deleted.');
+      navigate('/admin/users');
+    } catch (err) {
+      setMessage(`Error: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    }
+  }
+
   if (loading) return <div className="text-center py-12 text-slate-400">Loading...</div>;
   if (!user) return <div className="text-center py-12 text-slate-400">User not found.</div>;
+
+  const status = user.status || 'active';
 
   const quotaFields = [
     { key: 'maxBots' as const, label: 'Max Bots' },
@@ -122,7 +158,7 @@ export default function UserDetail() {
           </div>
           <div>
             <dt className="text-slate-500">Bots</dt>
-            <dd className="text-2xl font-bold text-slate-900">{(user.botCount ?? 0).toLocaleString()} / {user.quota?.maxBots?.toLocaleString() ?? '—'}</dd>
+            <dd className="text-2xl font-bold text-slate-900">{(user.botCount ?? 0).toLocaleString()} / {user.quota?.maxBots?.toLocaleString() ?? '\u2014'}</dd>
           </div>
         </dl>
       </div>
@@ -141,6 +177,41 @@ export default function UserDetail() {
             className="rounded-lg bg-accent-500 text-white px-4 py-2.5 text-sm font-medium hover:bg-accent-600 disabled:opacity-50">
             Save Plan
           </button>
+        </div>
+      </div>
+
+      {/* Status */}
+      <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 mb-6">
+        <h2 className="text-lg font-semibold text-slate-900 mb-4">Status</h2>
+        <div className="flex items-center gap-4">
+          <Badge variant={
+            status === 'active' ? 'success' :
+            status === 'suspended' ? 'warning' :
+            'error'
+          }>{status}</Badge>
+          <div className="flex items-center gap-2">
+            {status === 'active' ? (
+              <button
+                onClick={handleSuspend}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 text-amber-700 px-3 py-2 text-sm font-medium hover:bg-amber-100 transition-colors"
+              >
+                <Ban size={14} /> Suspend
+              </button>
+            ) : status === 'suspended' ? (
+              <button
+                onClick={handleActivate}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-50 text-emerald-700 px-3 py-2 text-sm font-medium hover:bg-emerald-100 transition-colors"
+              >
+                <PlayCircle size={14} /> Activate
+              </button>
+            ) : null}
+            <button
+              onClick={handleDelete}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-red-300 bg-red-50 text-red-700 px-3 py-2 text-sm font-medium hover:bg-red-100 transition-colors"
+            >
+              <Trash2 size={14} /> Delete
+            </button>
+          </div>
         </div>
       </div>
 
