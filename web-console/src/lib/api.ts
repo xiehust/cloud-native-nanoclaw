@@ -36,7 +36,11 @@ export interface Bot {
   description?: string;
   status: string;
   triggerPattern: string;
+  providerId?: string;
+  modelId?: string;
+  /** @deprecated */
   model?: string;
+  /** @deprecated */
   modelProvider?: 'bedrock' | 'anthropic-api';
   createdAt: string;
 }
@@ -85,8 +89,8 @@ export interface CreateBotRequest {
   name: string;
   description?: string;
   triggerPattern?: string;
-  model?: string;
-  modelProvider?: 'bedrock' | 'anthropic-api';
+  providerId?: string;
+  modelId?: string;
 }
 
 export interface CreateChannelRequest {
@@ -106,14 +110,38 @@ export interface UpdateTaskRequest {
   prompt?: string;
 }
 
-export interface ProviderConfig {
+// Provider types (admin-managed)
+export interface ProviderPublic {
+  providerId: string;
+  providerName: string;
+  providerType: 'bedrock' | 'anthropic-compatible-api';
+  modelIds: string[];
+  isDefault: boolean;
+}
+
+export interface ProviderFull extends ProviderPublic {
+  baseUrl?: string;
   hasApiKey: boolean;
-  anthropicBaseUrl?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateProviderRequest {
+  providerName: string;
+  providerType: 'bedrock' | 'anthropic-compatible-api';
+  baseUrl?: string;
+  apiKey?: string;
+  modelIds: string[];
+  isDefault?: boolean;
 }
 
 export interface UpdateProviderRequest {
-  anthropicApiKey?: string;
-  anthropicBaseUrl?: string;
+  providerName?: string;
+  providerType?: 'bedrock' | 'anthropic-compatible-api';
+  baseUrl?: string | null;
+  apiKey?: string;
+  modelIds?: string[];
+  isDefault?: boolean;
 }
 
 // Bot API
@@ -149,8 +177,11 @@ export const tasks = {
 // User API
 export const user = {
   me: () => request<{ userId: string; email: string; plan?: string; quota?: any; usage?: { month: string; tokens: number; invocations: number }; isAdmin?: boolean }>('/me'),
-  getProvider: () => request<ProviderConfig>('/me/provider'),
-  updateProvider: (data: UpdateProviderRequest) => request<ProviderConfig>('/me/provider', { method: 'PUT', body: JSON.stringify(data) }),
+};
+
+// Providers API (public — returns only non-sensitive fields)
+export const providers = {
+  list: () => request<ProviderPublic[]>('/providers'),
 };
 
 // Admin API types
@@ -213,6 +244,13 @@ export const admin = {
     }),
   deleteUser: (userId: string) =>
     request<{ ok: boolean }>(`/admin/${userId}`, { method: 'DELETE' }),
+  listProviders: () => request<ProviderFull[]>('/admin/providers'),
+  createProvider: (data: CreateProviderRequest) =>
+    request<ProviderFull>('/admin/providers', { method: 'POST', body: JSON.stringify(data) }),
+  updateProvider: (providerId: string, data: UpdateProviderRequest) =>
+    request<ProviderFull>(`/admin/providers/${providerId}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteProvider: (providerId: string) =>
+    request<{ ok: boolean }>(`/admin/providers/${providerId}`, { method: 'DELETE' }),
 };
 
 // File Browser types
