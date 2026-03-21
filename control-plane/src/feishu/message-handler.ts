@@ -36,9 +36,11 @@ export interface FeishuSender {
 
 export interface FeishuMention {
   key: string;
-  id: string;
-  id_type: string;
+  /** Event callback: object { open_id, user_id, union_id }; REST API: flat string */
+  id: string | { open_id?: string; user_id?: string; union_id?: string };
+  id_type?: string;
   name: string;
+  tenant_key?: string;
 }
 
 export interface FeishuMessageBody {
@@ -88,11 +90,18 @@ function stripAtMentions(text: string): string {
 
 /**
  * Check if the bot was @mentioned in a group message.
- * Uses the structured mentions array from Feishu events, matching on the bot's open_id.
+ * Handles both event callback format (id is object) and REST API format (id is string).
  */
 function isBotMentioned(mentions: FeishuMention[] | undefined, botOpenId: string): boolean {
   if (!mentions || !botOpenId) return false;
-  return mentions.some(m => m.id === botOpenId);
+  return mentions.some(m => {
+    if (typeof m.id === 'object' && m.id !== null) {
+      // Event callback format: { open_id, user_id, union_id }
+      return m.id.open_id === botOpenId;
+    }
+    // REST API / flat format
+    return m.id === botOpenId;
+  });
 }
 
 function shouldTrigger(
