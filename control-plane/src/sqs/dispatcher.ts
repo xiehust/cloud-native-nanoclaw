@@ -33,7 +33,7 @@ import {
   releaseAgentSlot,
   getChannelsByBot,
 } from '../services/dynamo.js';
-import { getAnthropicApiKey } from '../services/secrets.js';
+import { getAnthropicApiKey, getProxyRules } from '../services/secrets.js';
 import { getCachedBot } from '../services/cached-lookups.js';
 import { getRegistry } from '../adapters/registry.js';
 import type { ReplyContext, ReplyOptions } from '@clawbot/shared/channel-adapter';
@@ -194,7 +194,10 @@ async function dispatchMessage(
     // Resolve provider credentials (Anthropic API key + base URL) if bot uses anthropic-api
     const providerCreds = await resolveProviderCredentials(bot, payload.userId, logger);
 
-    // 6b. Check for model/provider change → force new session if needed
+    // 6b. Load proxy rules for credential injection
+    const proxyRules = await getProxyRules(payload.userId);
+
+    // 6c. Check for model/provider change → force new session if needed
     const effectiveProvider = providerCreds.modelProvider ?? bot.modelProvider;
     const existingSession = await getSession(payload.botId, payload.groupJid);
     const forceNewSession = shouldResetSession(existingSession, bot.model, effectiveProvider);
@@ -232,10 +235,19 @@ async function dispatchMessage(
       ...(feishuConfig && { feishu: feishuConfig }),
       ...providerCreds,
       ...(forceNewSession && { forceNewSession: true }),
+      ...(proxyRules.length > 0 && {
+        proxyRules: proxyRules.map((r) => ({
+          prefix: r.prefix,
+          target: r.target,
+          authType: r.authType,
+          headerName: r.headerName,
+          value: r.value,
+        })),
+      }),
     };
 
     logger.info(
-      { botId: payload.botId, groupJid: payload.groupJid },
+      { botId: payload.botId, groupJid: payload.groupJid, proxyRuleCount: proxyRules.length },
       'Invoking agent',
     );
 
@@ -366,6 +378,7 @@ async function dispatchTask(
   const feishuConfig = await buildFeishuConfig(payload.botId, channelType, logger);
 
   const providerCreds = await resolveProviderCredentials(bot, payload.userId, logger);
+  const proxyRulesTask = await getProxyRules(payload.userId);
 
   // Check for model/provider change
   const effectiveProvider = providerCreds.modelProvider ?? bot.modelProvider;
@@ -398,6 +411,15 @@ async function dispatchTask(
     ...(feishuConfig && { feishu: feishuConfig }),
     ...providerCreds,
     ...(forceNewSession && { forceNewSession: true }),
+    ...(proxyRulesTask.length > 0 && {
+      proxyRules: proxyRulesTask.map((r) => ({
+        prefix: r.prefix,
+        target: r.target,
+        authType: r.authType,
+        headerName: r.headerName,
+        value: r.value,
+      })),
+    }),
   };
 
   const result = await invokeAgent(invocationPayload, logger);

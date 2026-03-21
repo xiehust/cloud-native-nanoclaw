@@ -35,6 +35,7 @@ import { syncFromS3, syncToS3, clearSessionDirectory, syncMemoryOnlyFromS3, type
 import { buildAppendContent } from './system-prompt.js';
 import { getScopedClients } from './scoped-credentials.js';
 import { setBusy, setIdle } from './server.js';
+import { startCredentialProxy, type CredentialProxy } from './credential-proxy.js';
 
 const SESSION_BUCKET = process.env.SESSION_BUCKET || '';
 const DEFAULT_MODEL = 'global.anthropic.claude-sonnet-4-6';
@@ -205,7 +206,30 @@ async function _handleInvocation(
     CLAUDE_CODE_USE_BEDROCK: payload.modelProvider === 'anthropic-api' ? '0' : '1',
   };
 
-  if (payload.modelProvider === 'anthropic-api') {
+  // 6b. Start credential proxy if proxyRules are provided
+  let credProxy: CredentialProxy | null = null;
+  const PROXY_PORT = 9090;
+
+  if (payload.proxyRules && payload.proxyRules.length > 0) {
+    try {
+      credProxy = await startCredentialProxy(payload.proxyRules, PROXY_PORT, logger);
+
+      // Check if there's an Anthropic rule — route SDK through proxy
+      const anthropicRule = payload.proxyRules.find(
+        (r) => r.target.includes('anthropic.com') || r.prefix.includes('anthropic'),
+      );
+      if (anthropicRule && payload.modelProvider === 'anthropic-api') {
+        sdkEnv.ANTHROPIC_API_KEY = 'proxy-managed';
+        sdkEnv.ANTHROPIC_BASE_URL = `http://127.0.0.1:${PROXY_PORT}${anthropicRule.prefix}`;
+      }
+    } catch (err) {
+      logger.warn({ err }, 'Failed to start credential proxy, falling back to direct credentials');
+      credProxy = null;
+    }
+  }
+
+  // Fall back to direct credentials if proxy is not active
+  if (!credProxy && payload.modelProvider === 'anthropic-api') {
     if (payload.anthropicApiKey) {
       sdkEnv.ANTHROPIC_API_KEY = payload.anthropicApiKey;
     }
@@ -222,20 +246,28 @@ async function _handleInvocation(
 
   // 8. Run Claude Agent SDK query
   logger.info('Starting agent query');
-  const result = await runAgentQuery({
-    prompt: agentPrompt,
-    mcpServerPath,
-    sdkEnv,
-    appendContent,
-    botId,
-    botName,
-    groupJid,
-    userId,
-    payload,
-    feishuEnv,
-    forceNewSession,
-    logger,
-  });
+  let result;
+  try {
+    result = await runAgentQuery({
+      prompt: agentPrompt,
+      mcpServerPath,
+      sdkEnv,
+      appendContent,
+      botId,
+      botName,
+      groupJid,
+      userId,
+      payload,
+      feishuEnv,
+      forceNewSession,
+      logger,
+    });
+  } finally {
+    // 8b. Always stop credential proxy, even on error (prevent EADDRINUSE on reuse)
+    if (credProxy) {
+      await credProxy.stop();
+    }
+  }
 
   // 9. Sync session and memory back to S3
   logger.info('Syncing session back to S3');

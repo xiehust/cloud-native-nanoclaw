@@ -240,6 +240,17 @@ export interface InvocationPayload {
   feishu?: FeishuInvocationConfig;
   /** When true, agent runtime should NOT resume existing session (model/provider changed) */
   forceNewSession?: boolean;
+  /** Credential proxy rules — injected by control-plane from user config */
+  proxyRules?: InvocationProxyRule[];
+}
+
+/** Proxy rule passed through invocation payload (secrets included). */
+export interface InvocationProxyRule {
+  prefix: string;
+  target: string;
+  authType: 'bearer' | 'api-key' | 'basic';
+  headerName?: string;
+  value: string;
 }
 
 /** Feishu/Lark config passed to agent runtime for MCP tool registration. */

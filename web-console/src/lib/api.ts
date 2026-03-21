@@ -244,6 +244,33 @@ export const files = {
     request<FileContent>(`/bots/${botId}/files/content?key=${encodeURIComponent(key)}`),
 };
 
+// Proxy Rules API (credential injection)
+export interface ProxyRuleSummary {
+  id: string;
+  name: string;
+  prefix: string;
+  target: string;
+  authType: 'bearer' | 'api-key' | 'basic';
+  headerName?: string;
+  hasValue: boolean;
+}
+
+export interface ProxyRuleInput {
+  name: string;
+  prefix: string;
+  target: string;
+  authType: 'bearer' | 'api-key' | 'basic';
+  headerName?: string;
+  value: string;
+}
+
+export const proxyRules = {
+  list: () => request<ProxyRuleSummary[]>('/proxy-rules'),
+  create: (rule: ProxyRuleInput) => request<ProxyRuleSummary>('/proxy-rules', { method: 'POST', body: JSON.stringify(rule) }),
+  update: (id: string, rule: Partial<ProxyRuleInput>) => request<ProxyRuleSummary>(`/proxy-rules/${id}`, { method: 'PUT', body: JSON.stringify(rule) }),
+  remove: (id: string) => request<{ ok: boolean }>(`/proxy-rules/${id}`, { method: 'DELETE' }),
+};
+
 export const memory = {
   getShared: () => request<MemoryResponse>('/shared-memory'),
   updateShared: (content: string) => request<MemoryResponse>('/shared-memory', { method: 'PUT', body: JSON.stringify({ content }) }),
