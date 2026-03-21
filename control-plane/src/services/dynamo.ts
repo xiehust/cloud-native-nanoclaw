@@ -19,6 +19,7 @@ import type {
   Group,
   Message,
   PlanQuotas,
+  Provider,
   ScheduledTask,
   Session,
   User,
@@ -971,4 +972,109 @@ export async function savePlanQuotas(quotas: PlanQuotas): Promise<void> {
       },
     }),
   );
+}
+
+// ── Provider operations (global, admin-managed) ──────────────────────────
+
+const providerIdSchema = z.string().min(1, 'providerId is required');
+
+export async function getProvider(providerId: string): Promise<Provider | null> {
+  providerIdSchema.parse(providerId);
+  const result = await client.send(
+    new GetCommand({
+      TableName: config.tables.providers,
+      Key: { providerId },
+    }),
+  );
+  return (result.Item as Provider) ?? null;
+}
+
+export async function listProviders(): Promise<Provider[]> {
+  const items: Provider[] = [];
+  let lastKey: Record<string, unknown> | undefined;
+  do {
+    const result = await client.send(
+      new ScanCommand({
+        TableName: config.tables.providers,
+        ExclusiveStartKey: lastKey,
+      }),
+    );
+    if (result.Items) items.push(...(result.Items as Provider[]));
+    lastKey = result.LastEvaluatedKey;
+  } while (lastKey);
+  return items;
+}
+
+export async function putProvider(provider: Provider): Promise<void> {
+  await client.send(
+    new PutCommand({
+      TableName: config.tables.providers,
+      Item: provider,
+    }),
+  );
+}
+
+export async function updateProvider(
+  providerId: string,
+  updates: Partial<Pick<Provider, 'providerName' | 'providerType' | 'baseUrl' | 'hasApiKey' | 'modelIds' | 'isDefault' | 'updatedAt'>>,
+): Promise<void> {
+  providerIdSchema.parse(providerId);
+
+  const expressions: string[] = [];
+  const names: Record<string, string> = {};
+  const values: Record<string, unknown> = {};
+
+  const allowedFields = [
+    'providerName',
+    'providerType',
+    'baseUrl',
+    'hasApiKey',
+    'modelIds',
+    'isDefault',
+    'updatedAt',
+  ] as const;
+
+  for (const field of allowedFields) {
+    if (updates[field] !== undefined) {
+      const attrName = `#${field}`;
+      const attrValue = `:${field}`;
+      expressions.push(`${attrName} = ${attrValue}`);
+      names[attrName] = field;
+      values[attrValue] = updates[field];
+    }
+  }
+
+  if (expressions.length === 0) return;
+
+  await client.send(
+    new UpdateCommand({
+      TableName: config.tables.providers,
+      Key: { providerId },
+      UpdateExpression: `SET ${expressions.join(', ')}`,
+      ExpressionAttributeNames: names,
+      ExpressionAttributeValues: values,
+    }),
+  );
+}
+
+export async function deleteProvider(providerId: string): Promise<void> {
+  providerIdSchema.parse(providerId);
+  await client.send(
+    new DeleteCommand({
+      TableName: config.tables.providers,
+      Key: { providerId },
+    }),
+  );
+}
+
+/** Clear the isDefault flag on all providers that currently have it set. */
+export async function clearDefaultProvider(): Promise<void> {
+  const all = await listProviders();
+  const defaults = all.filter((p) => p.isDefault);
+  for (const p of defaults) {
+    await updateProvider(p.providerId, {
+      isDefault: false,
+      updatedAt: new Date().toISOString(),
+    });
+  }
 }
