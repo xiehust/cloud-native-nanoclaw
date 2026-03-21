@@ -26,6 +26,7 @@ export const config = {
     messages: process.env.MESSAGES_TABLE || 'nanoclawbot-dev-messages',
     tasks: process.env.TASKS_TABLE || 'nanoclawbot-dev-tasks',
     sessions: process.env.SESSIONS_TABLE || 'nanoclawbot-dev-sessions',
+    providers: process.env.PROVIDERS_TABLE || 'nanoclawbot-dev-providers',
   },
 
   // SQS queue URLs (match CDK: MESSAGE_QUEUE_URL, REPLY_QUEUE_URL)
