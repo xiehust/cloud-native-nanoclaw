@@ -242,6 +242,20 @@ export class ControlPlaneStack extends cdk.Stack {
       }),
     );
 
+    // Cognito — admin user management (create, enable, disable)
+    taskRole.addToPrincipalPolicy(
+      new iam.PolicyStatement({
+        sid: 'CognitoAdminUser',
+        effect: iam.Effect.ALLOW,
+        actions: [
+          'cognito-idp:AdminCreateUser',
+          'cognito-idp:AdminDisableUser',
+          'cognito-idp:AdminEnableUser',
+        ],
+        resources: [props.userPool.userPoolArn],
+      }),
+    );
+
     // ── Fargate Service ─────────────────────────────────────────────────
     this.service = new ecs.FargateService(this, 'Service', {
       cluster: this.cluster,
