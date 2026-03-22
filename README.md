@@ -1,8 +1,67 @@
-# ClawBot Cloud
+<div align="center">
 
-Multi-tenant AI assistant platform on AWS, evolved from [NanoClaw](../README.md).
+<!-- Logo / Title -->
+<h1>
+  <img src="https://img.shields.io/badge/☁️-NanoClaw_on_Cloud-4A90D9?style=for-the-badge&labelColor=1a1a2e" alt="NanoClaw on Cloud" />
+</h1>
 
-Users create Bots via a web console, connect messaging channels (Telegram, Discord, Slack), and Bots run Claude Agents in isolated cloud environments — each with independent memory, conversations, and scheduled tasks.
+<p><strong>Multi-tenant AI Assistant Platform on AWS</strong></p>
+
+<p>
+  <em>Create Bots · Connect Channels · Run Claude Agents in Isolated Cloud Environments</em>
+</p>
+
+<!-- Badges -->
+<p>
+  <img src="https://img.shields.io/badge/TypeScript-ESM_Strict-3178C6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript" />
+  <img src="https://img.shields.io/badge/AWS-CDK_v2-FF9900?style=flat-square&logo=amazonaws&logoColor=white" alt="AWS CDK" />
+  <img src="https://img.shields.io/badge/Claude-Agent_SDK-D97706?style=flat-square" alt="Claude Agent SDK" />
+  <img src="https://img.shields.io/badge/Runtime-AgentCore_microVM-8B5CF6?style=flat-square" alt="AgentCore" />
+  <img src="https://img.shields.io/badge/License-Private-gray?style=flat-square" alt="License" />
+</p>
+
+<!-- Quick Links -->
+<table>
+  <tr>
+    <td align="center"><a href="./docs/nanoclaw-architecture.pptx"><strong>📊 Architecture PPT</strong></a><br/><sub>System overview slides</sub></td>
+    <td align="center"><a href="./docs/CLOUD_ARCHITECTURE.md"><strong>📐 Architecture Doc</strong></a><br/><sub>Full design details</sub></td>
+    <td align="center"><a href="#deployment"><strong>🚀 Deploy Guide</strong></a><br/><sub>One-command deploy</sub></td>
+    <td align="center"><a href="#local-development"><strong>💻 Local Dev</strong></a><br/><sub>Dev setup</sub></td>
+  </tr>
+  <tr>
+    <td align="center"><a href="#message-flow"><strong>📨 Message Flow</strong></a><br/><sub>End-to-end walkthrough</sub></td>
+    <td align="center"><a href="#security"><strong>🔒 Security</strong></a><br/><sub>Auth & isolation</sub></td>
+    <td align="center"><a href="#packages"><strong>📦 Packages</strong></a><br/><sub>Monorepo structure</sub></td>
+    <td align="center"><a href="./docs/TODO.md"><strong>📋 TODO</strong></a><br/><sub>Roadmap & backlog</sub></td>
+  </tr>
+</table>
+
+<br/>
+
+<details>
+<summary><strong>📚 Architecture Deep-Dive Docs</strong></summary>
+<br/>
+
+| Doc | Topic |
+|-----|-------|
+| [04 — Layered Architecture](./docs/architecture/04-layered-architecture.md) | Service layers, channels, providers |
+| [05 — Data Model](./docs/architecture/05-data-model.md) | DynamoDB tables, S3 layout |
+| [06–07 — Lifecycles](./docs/architecture/06-07-lifecycles.md) | Bot & session lifecycle |
+| [08 — Channel Management](./docs/architecture/08-channel-management.md) | Telegram, Discord, Slack, Feishu |
+| [09–10 — Agent Runtime](./docs/architecture/09-10-agent-runtime.md) | AgentCore, Claude SDK, MCP tools |
+| [11–12 — Security & Observability](./docs/architecture/11-12-security-observability.md) | ABAC, WAF, CloudWatch |
+| [15 — CDK Deployment](./docs/architecture/15-cdk-deployment.md) | 6-stack CDK infrastructure |
+| [16 — System Prompt Builder](./docs/architecture/16-system-prompt-builder.md) | Agent context construction |
+
+</details>
+
+</div>
+
+<br/>
+
+> Evolved from [NanoClaw](../README.md) — a single-user local bot framework — into a fully managed, multi-tenant cloud platform. Each user gets their own Bots with independent memory, conversations, and scheduled tasks.
+
+---
 
 ## Architecture
 
@@ -239,6 +298,10 @@ cloud_native_nanoclaw/
 | **Total (1 user)** | **~$53/mo** |
 | **100 users (amortized)** | **~$8/user/mo** |
 
-## Design Document
+## Documentation
 
-Full architecture details: [`docs/CLOUD_ARCHITECTURE.md`](./docs/CLOUD_ARCHITECTURE.md)
+| Resource | Description |
+|----------|-------------|
+| [📊 Architecture PPT](./docs/nanoclaw-architecture.pptx) | Visual system overview slides |
+| [📐 Cloud Architecture](./docs/CLOUD_ARCHITECTURE.md) | Full design document with all details |
+| [📋 TODO & Roadmap](./docs/TODO.md) | Backlog, deferred items, future work |
