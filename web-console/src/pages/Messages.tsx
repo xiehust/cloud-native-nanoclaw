@@ -1,9 +1,11 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams, Link } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { ArrowLeft, MessageSquare } from 'lucide-react';
 import { groups as groupsApi, Message } from '../lib/api';
 
 export default function Messages() {
+  const { t } = useTranslation();
   const { botId, groupJid } = useParams<{ botId: string; groupJid: string }>();
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(true);
@@ -38,9 +40,9 @@ export default function Messages() {
           to={`/bots/${botId}`}
           className="flex items-center gap-1 text-sm text-slate-500 hover:text-slate-700"
         >
-          <ArrowLeft size={16} /> Back
+          <ArrowLeft size={16} /> {t('common.back')}
         </Link>
-        <h1 className="text-xl font-semibold text-slate-900">Messages</h1>
+        <h1 className="text-xl font-semibold text-slate-900">{t('messages.title')}</h1>
       </div>
 
       {/* Chat */}
@@ -49,7 +51,7 @@ export default function Messages() {
           {messages.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-slate-400">
               <MessageSquare size={40} />
-              <p className="mt-2 text-sm">No messages yet</p>
+              <p className="mt-2 text-sm">{t('messages.noMessages')}</p>
             </div>
           ) : (
             messages.map((msg) => (

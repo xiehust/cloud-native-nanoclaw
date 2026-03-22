@@ -218,8 +218,9 @@ export async function handleFeishuMessage({
   const feishuMsg = event.message;
   const sender = event.sender;
 
-  // Filter out bot's own messages to prevent infinite loops
-  if (sender.sender_type === 'bot') return;
+  // Filter out this bot's own messages to prevent infinite loops.
+  // Other bots' messages are kept so they appear in group chat context.
+  if (sender.sender_id.open_id === botOpenId) return;
 
   // Parse message content
   const rawContent = parseFeishuContent(feishuMsg.message_type, feishuMsg.content);
@@ -345,6 +346,9 @@ export async function handleFeishuMessage({
     ...(attachments.length > 0 && { attachments }),
   };
   await putMessage(msg);
+
+  // Other bots' messages are stored for context but never dispatched
+  if (sender.sender_type === 'bot') return;
 
   // Check trigger (use mentions array for bot detection, raw content for pattern matching)
   if (!shouldTrigger(rawContent, feishuMsg.chat_type, bot.triggerPattern, feishuMsg.mentions, botOpenId, hasMedia)) {

@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   ChevronRight, ChevronDown, Folder, FolderOpen,
   FileText, RefreshCw,
@@ -103,6 +104,7 @@ function TreeNode({
 /* ── FileBrowser ──────────────────────────────────────────────────── */
 
 export default function FileBrowser({ botId }: { botId: string }) {
+  const { t } = useTranslation();
   const [tree, setTree] = useState<Record<string, FileEntry[]>>({});
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
@@ -124,7 +126,7 @@ export default function FileBrowser({ botId }: { botId: string }) {
       setTree((prev) => ({ ...prev, [prefix]: result.entries }));
     } catch (err) {
       console.error('Failed to load folder:', err);
-      if (prefix === '') setError('Failed to load files');
+      if (prefix === '') setError(t('botDetail.files.failedToLoad'));
     } finally {
       if (prefix === '') setLoading(false);
     }
@@ -178,11 +180,11 @@ export default function FileBrowser({ botId }: { botId: string }) {
       <div className="w-72 border-r border-slate-200 overflow-y-auto bg-white flex-shrink-0 flex flex-col">
         {/* Tree header */}
         <div className="flex items-center justify-between px-3 py-2.5 border-b border-slate-100">
-          <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Explorer</span>
+          <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">{t('botDetail.files.explorer')}</span>
           <button
             onClick={handleRefresh}
             className="p-1 text-slate-400 hover:text-slate-600 transition-colors rounded"
-            title="Refresh"
+            title={t('botDetail.files.refresh')}
           >
             <RefreshCw size={14} />
           </button>
@@ -192,7 +194,7 @@ export default function FileBrowser({ botId }: { botId: string }) {
         <div className="flex-1 overflow-y-auto p-1.5">
           {loading ? (
             <div className="flex items-center justify-center py-12 text-sm text-slate-400">
-              Loading...
+              {t('common.loading')}
             </div>
           ) : error ? (
             <div className="flex flex-col items-center justify-center py-12 text-sm text-slate-400 gap-2">
@@ -201,12 +203,12 @@ export default function FileBrowser({ botId }: { botId: string }) {
                 onClick={handleRefresh}
                 className="text-accent-600 hover:text-accent-700 font-medium"
               >
-                Retry
+                {t('common.retry')}
               </button>
             </div>
           ) : rootEntries.length === 0 ? (
             <div className="flex items-center justify-center py-12 text-sm text-slate-400">
-              No files found
+              {t('common.noFilesFound')}
             </div>
           ) : (
             rootEntries.map((entry) => (
@@ -230,7 +232,7 @@ export default function FileBrowser({ botId }: { botId: string }) {
       <div className="flex-1 overflow-hidden bg-slate-50 flex flex-col">
         {contentLoading ? (
           <div className="flex items-center justify-center flex-1 text-sm text-slate-400">
-            Loading file...
+            {t('botDetail.files.loadingFile')}
           </div>
         ) : selectedFile && fileContent ? (
           <>
@@ -241,10 +243,10 @@ export default function FileBrowser({ botId }: { botId: string }) {
               </p>
               <div className="flex items-center gap-3 mt-1 text-xs text-slate-500">
                 {fileContent.size != null && (
-                  <span>Size: {formatBytes(fileContent.size)}</span>
+                  <span>{t('botDetail.files.size', { size: formatBytes(fileContent.size) })}</span>
                 )}
                 {fileContent.lastModified && (
-                  <span>Modified: {formatDate(fileContent.lastModified)}</span>
+                  <span>{t('botDetail.files.modified', { date: formatDate(fileContent.lastModified) })}</span>
                 )}
                 {fileContent.contentType && (
                   <span>{fileContent.contentType}</span>
@@ -275,7 +277,7 @@ export default function FileBrowser({ botId }: { botId: string }) {
         ) : (
           <div className="flex flex-col items-center justify-center flex-1 text-slate-400 gap-3">
             <FileText size={40} strokeWidth={1.5} />
-            <p className="text-sm">Select a file to preview</p>
+            <p className="text-sm">{t('botDetail.files.selectFile')}</p>
           </div>
         )}
       </div>

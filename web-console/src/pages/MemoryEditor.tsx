@@ -1,29 +1,13 @@
 import { useState, useEffect } from 'react';
 import { useParams, useSearchParams, Link } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { Brain, Save } from 'lucide-react';
 import { memory } from '../lib/api';
 
 type Level = 'shared' | 'bot-global' | 'group';
 
-const LEVEL_META: Record<Level, { label: string; description: string; placeholder: string }> = {
-  shared: {
-    label: 'Shared Memory',
-    description: 'Memory shared across all bots (CLAUDE.md)',
-    placeholder: '# Shared Memory\n\nEnter instructions and context shared across all your bots...',
-  },
-  'bot-global': {
-    label: 'Bot Memory',
-    description: 'Bot operating manual — identity, personality, rules, and notes (CLAUDE.md)',
-    placeholder: '# Bot Memory\n\nEnter bot-specific instructions...',
-  },
-  group: {
-    label: 'Group Memory',
-    description: 'Conversation-specific memory (CLAUDE.md)',
-    placeholder: '# Group Memory\n\nEnter conversation-specific context...',
-  },
-};
-
 export default function MemoryEditor() {
+  const { t } = useTranslation();
   const { botId, groupJid } = useParams<{ botId?: string; groupJid?: string }>();
   const [searchParams] = useSearchParams();
   const tabParam = searchParams.get('tab') as Level | null;
@@ -44,7 +28,25 @@ export default function MemoryEditor() {
         ? 'bot-global'
         : 'shared';
 
-  const meta = LEVEL_META[level];
+  const levelMeta: Record<Level, { label: string; description: string; placeholder: string }> = {
+    shared: {
+      label: t('memoryEditor.sharedMemory'),
+      description: t('memoryEditor.sharedDesc'),
+      placeholder: t('memoryEditor.sharedPlaceholder'),
+    },
+    'bot-global': {
+      label: t('memoryEditor.botMemory'),
+      description: t('memoryEditor.botDesc'),
+      placeholder: t('memoryEditor.botPlaceholder'),
+    },
+    group: {
+      label: t('memoryEditor.groupMemory'),
+      description: t('memoryEditor.groupDesc'),
+      placeholder: t('memoryEditor.groupPlaceholder'),
+    },
+  };
+
+  const meta = levelMeta[level];
 
   useEffect(() => { loadMemory(); }, [botId, groupJid, level]);
 
@@ -61,7 +63,7 @@ export default function MemoryEditor() {
           result = await memory.getBotGlobal(botId!);
           break;
         case 'group':
-          if (!groupJid) { setError('Group context required'); setLoading(false); return; }
+          if (!groupJid) { setError(t('memoryEditor.groupContextRequired')); setLoading(false); return; }
           result = await memory.getGroup(botId!, groupJid);
           break;
       }
@@ -116,7 +118,7 @@ export default function MemoryEditor() {
             to={`/bots/${botId}`}
             className="text-sm text-slate-500 hover:text-slate-700 transition-colors"
           >
-            Back to Bot
+            {t('common.backToBot')}
           </Link>
         )}
       </div>
@@ -131,8 +133,7 @@ export default function MemoryEditor() {
       {/* Empty group memory hint */}
       {!loading && level === 'group' && !content && !error && (
         <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
-          This conversation has no independent memory yet. The bot will use its bot-level memory by default.
-          Group memory is created automatically when the agent saves conversation-specific context, or you can add it manually below.
+          {t('memoryEditor.groupMemoryHint')}
         </div>
       )}
 
@@ -157,10 +158,10 @@ export default function MemoryEditor() {
               className="inline-flex items-center gap-2 rounded-lg bg-accent-500 text-white px-4 py-2.5 text-sm font-medium hover:bg-accent-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
               <Save size={16} />
-              {saving ? 'Saving...' : `Save ${meta.label}`}
+              {saving ? t('common.saving') : t(level === 'shared' ? 'memoryEditor.saveSharedMemory' : level === 'bot-global' ? 'memoryEditor.saveBotMemory' : 'memoryEditor.saveGroupMemory')}
             </button>
             {saved && (
-              <span className="text-sm text-emerald-600 font-medium">Saved successfully</span>
+              <span className="text-sm text-emerald-600 font-medium">{t('common.savedSuccessfully')}</span>
             )}
           </div>
         </div>

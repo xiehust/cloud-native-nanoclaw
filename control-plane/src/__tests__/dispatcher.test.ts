@@ -222,7 +222,7 @@ describe('dispatch NO_REPLY handling', () => {
     vi.doMock('../services/dynamo.js', () => ({
       getGroup: mockGetGroup,
       getSession: mockGetSession,
-      getRecentMessages: vi.fn(),
+      getRecentMessages: vi.fn().mockResolvedValue([]),
       ensureUser: mockEnsureUser,
       putMessage: mockPutMessage,
       putSession: mockPutSession,

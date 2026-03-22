@@ -27,6 +27,7 @@ import {
   putSession,
   getSession,
   getTask,
+  getRecentMessages,
   updateUserUsage,
   checkAndAcquireAgentSlot,
   releaseAgentSlot,
@@ -55,6 +56,47 @@ export function shouldResetSession(
 /** Check if agent result is a silent NO_REPLY (nothing to send) */
 function isSilentReply(result: string | null | undefined): boolean {
   return result?.trim() === 'NO_REPLY';
+}
+
+/** Max recent messages to include as group chat context */
+const GROUP_CONTEXT_LIMIT = 20;
+/** Max characters per message in group context (prevent token budget blowup) */
+const MAX_CONTEXT_MSG_CHARS = 500;
+
+/**
+ * Build group chat context from recent DynamoDB messages.
+ * Returns formatted chat log to prepend to the prompt, or empty string for DMs.
+ */
+async function buildGroupChatContext(
+  botId: string,
+  groupJid: string,
+  isGroupChat: boolean,
+  currentMessageId: string,
+  logger: Logger,
+): Promise<string> {
+  if (!isGroupChat) return '';
+
+  try {
+    const messages = await getRecentMessages(botId, groupJid, GROUP_CONTEXT_LIMIT + 1);
+    // Exclude the current message (it's already the prompt) — messages are chronological
+    const context = messages.filter(m => m.messageId !== currentMessageId);
+    if (context.length === 0) return '';
+
+    const lines = context.map(m => {
+      const name = m.senderName || m.sender || 'Unknown';
+      const who = m.isBotMessage ? `[Bot] ${name}` : name;
+      const time = m.timestamp.slice(11, 16); // "HH:MM"
+      const text = m.content.length > MAX_CONTEXT_MSG_CHARS
+        ? m.content.slice(0, MAX_CONTEXT_MSG_CHARS) + '...(truncated)'
+        : m.content;
+      return `[${time}] ${who}: ${text}`;
+    });
+
+    return `[Recent group chat (last ${context.length} messages)]\n${lines.join('\n')}\n---\n`;
+  } catch (err) {
+    logger.warn({ err, botId, groupJid }, 'Failed to build group chat context');
+    return '';
+  }
 }
 
 /**
@@ -265,11 +307,14 @@ async function dispatchMessage(
   }
 
   try {
-    // 4. Use message content from SQS payload (session history handled by Claude Code continue:true)
-    const prompt = payload.content;
-
-    // 5. Look up group record for isGroup flag
+    // 4. Look up group record for isGroup flag
     const group = await getGroup(payload.botId, payload.groupJid);
+
+    // 4b. Build group chat context — prepend recent messages so agent sees the conversation
+    const groupContext = await buildGroupChatContext(
+      payload.botId, payload.groupJid, !!group?.isGroup, payload.messageId, logger,
+    );
+    const prompt = groupContext + payload.content;
 
     // 6. Build feishu config (if channel is feishu, includes credential ARN + tool config)
     const feishuConfig = await buildFeishuConfig(payload.botId, payload.channelType, logger);

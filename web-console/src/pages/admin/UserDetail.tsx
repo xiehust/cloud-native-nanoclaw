@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { ArrowLeft, Ban, PlayCircle, Trash2 } from 'lucide-react';
 import { admin, AdminUser } from '../../lib/api';
 import Badge from '../../components/Badge';
@@ -11,6 +12,7 @@ function formatDateTime(dateStr?: string): string {
 }
 
 export default function UserDetail() {
+  const { t } = useTranslation();
   const { userId } = useParams<{ userId: string }>();
   const navigate = useNavigate();
   const [user, setUser] = useState<AdminUser | null>(null);
@@ -48,7 +50,7 @@ export default function UserDetail() {
     setMessage('');
     try {
       await admin.updateQuota(userId, quota);
-      setMessage('Quota updated successfully.');
+      setMessage(t('admin.userDetail.quotaUpdated'));
     } catch (err) {
       setMessage(`Error: ${err instanceof Error ? err.message : 'Unknown error'}`);
     } finally {
@@ -62,7 +64,7 @@ export default function UserDetail() {
     setMessage('');
     try {
       await admin.updatePlan(userId, plan);
-      setMessage('Plan updated successfully.');
+      setMessage(t('admin.userDetail.planUpdated'));
     } catch (err) {
       setMessage(`Error: ${err instanceof Error ? err.message : 'Unknown error'}`);
     } finally {
@@ -72,10 +74,10 @@ export default function UserDetail() {
 
   async function handleSuspend() {
     if (!userId) return;
-    if (!window.confirm('Suspend this user? They will lose access to the platform.')) return;
+    if (!window.confirm(t('admin.users.suspendConfirm'))) return;
     try {
       await admin.updateUserStatus(userId, 'suspended');
-      setMessage('User suspended.');
+      setMessage(t('admin.userDetail.userSuspended'));
       loadUser();
     } catch (err) {
       setMessage(`Error: ${err instanceof Error ? err.message : 'Unknown error'}`);
@@ -84,10 +86,10 @@ export default function UserDetail() {
 
   async function handleActivate() {
     if (!userId) return;
-    if (!window.confirm('Activate this user?')) return;
+    if (!window.confirm(t('admin.users.activateConfirm'))) return;
     try {
       await admin.updateUserStatus(userId, 'active');
-      setMessage('User activated.');
+      setMessage(t('admin.userDetail.userActivated'));
       loadUser();
     } catch (err) {
       setMessage(`Error: ${err instanceof Error ? err.message : 'Unknown error'}`);
@@ -96,34 +98,34 @@ export default function UserDetail() {
 
   async function handleDelete() {
     if (!userId) return;
-    if (!window.confirm('Delete this user? This action cannot be undone.')) return;
+    if (!window.confirm(t('admin.users.deleteConfirm'))) return;
     try {
       await admin.deleteUser(userId);
-      setMessage('User deleted.');
+      setMessage(t('admin.userDetail.userDeleted'));
       navigate('/admin/users');
     } catch (err) {
       setMessage(`Error: ${err instanceof Error ? err.message : 'Unknown error'}`);
     }
   }
 
-  if (loading) return <div className="text-center py-12 text-slate-400">Loading...</div>;
-  if (!user) return <div className="text-center py-12 text-slate-400">User not found.</div>;
+  if (loading) return <div className="text-center py-12 text-slate-400">{t('common.loading')}</div>;
+  if (!user) return <div className="text-center py-12 text-slate-400">{t('common.userNotFound')}</div>;
 
   const status = user.status || 'active';
 
   const quotaFields = [
-    { key: 'maxBots' as const, label: 'Max Bots' },
-    { key: 'maxGroupsPerBot' as const, label: 'Max Groups per Bot' },
-    { key: 'maxTasksPerBot' as const, label: 'Max Tasks per Bot' },
-    { key: 'maxConcurrentAgents' as const, label: 'Max Concurrent Agents' },
-    { key: 'maxMonthlyTokens' as const, label: 'Max Monthly Tokens' },
+    { key: 'maxBots' as const, label: t('admin.plans.maxBots') },
+    { key: 'maxGroupsPerBot' as const, label: t('admin.plans.maxGroupsPerBot') },
+    { key: 'maxTasksPerBot' as const, label: t('admin.plans.maxTasksPerBot') },
+    { key: 'maxConcurrentAgents' as const, label: t('admin.plans.maxConcurrentAgents') },
+    { key: 'maxMonthlyTokens' as const, label: t('admin.plans.maxMonthlyTokens') },
   ];
 
   return (
     <div className="animate-fade-in">
       <Link to="/admin" className="inline-flex items-center gap-1.5 text-sm text-accent-600 hover:text-accent-500 font-medium mb-4">
         <ArrowLeft className="h-4 w-4" />
-        Back to Admin
+        {t('common.backToAdmin')}
       </Link>
       <h1 className="text-2xl font-semibold text-slate-900 mb-6">{user.email || user.userId}</h1>
 
@@ -135,29 +137,29 @@ export default function UserDetail() {
 
       {/* User Info */}
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 mb-6">
-        <h2 className="text-lg font-semibold text-slate-900 mb-4">User Info</h2>
+        <h2 className="text-lg font-semibold text-slate-900 mb-4">{t('admin.userDetail.userInfo')}</h2>
         <dl className="grid grid-cols-2 gap-4 text-sm">
-          <div><dt className="text-slate-500">User ID</dt><dd className="font-mono text-slate-900">{user.userId}</dd></div>
-          <div><dt className="text-slate-500">Email</dt><dd className="text-slate-900">{user.email}</dd></div>
-          <div><dt className="text-slate-500">Created</dt><dd className="text-slate-900">{formatDateTime(user.createdAt)}</dd></div>
-          <div><dt className="text-slate-500">Last Login</dt><dd className="text-slate-900">{formatDateTime(user.lastLogin)}</dd></div>
+          <div><dt className="text-slate-500">{t('admin.userDetail.userId')}</dt><dd className="font-mono text-slate-900">{user.userId}</dd></div>
+          <div><dt className="text-slate-500">{t('admin.userDetail.email')}</dt><dd className="text-slate-900">{user.email}</dd></div>
+          <div><dt className="text-slate-500">{t('admin.userDetail.created')}</dt><dd className="text-slate-900">{formatDateTime(user.createdAt)}</dd></div>
+          <div><dt className="text-slate-500">{t('admin.userDetail.lastLogin')}</dt><dd className="text-slate-900">{formatDateTime(user.lastLogin)}</dd></div>
         </dl>
       </div>
 
       {/* Usage Stats */}
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 mb-6">
-        <h2 className="text-lg font-semibold text-slate-900 mb-4">Usage ({user.usageMonth})</h2>
+        <h2 className="text-lg font-semibold text-slate-900 mb-4">{t('admin.userDetail.usage', { month: user.usageMonth })}</h2>
         <dl className="grid grid-cols-3 gap-4 text-sm">
           <div>
-            <dt className="text-slate-500">Tokens</dt>
+            <dt className="text-slate-500">{t('admin.userDetail.tokens')}</dt>
             <dd className="text-2xl font-bold text-slate-900">{user.usageTokens.toLocaleString()}</dd>
           </div>
           <div>
-            <dt className="text-slate-500">Invocations</dt>
+            <dt className="text-slate-500">{t('admin.userDetail.invocations')}</dt>
             <dd className="text-2xl font-bold text-slate-900">{user.usageInvocations.toLocaleString()}</dd>
           </div>
           <div>
-            <dt className="text-slate-500">Bots</dt>
+            <dt className="text-slate-500">{t('admin.userDetail.bots')}</dt>
             <dd className="text-2xl font-bold text-slate-900">{(user.botCount ?? 0).toLocaleString()} / {user.quota?.maxBots?.toLocaleString() ?? '\u2014'}</dd>
           </div>
         </dl>
@@ -165,24 +167,24 @@ export default function UserDetail() {
 
       {/* Plan */}
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 mb-6">
-        <h2 className="text-lg font-semibold text-slate-900 mb-4">Plan</h2>
+        <h2 className="text-lg font-semibold text-slate-900 mb-4">{t('admin.userDetail.plan')}</h2>
         <div className="flex items-center gap-3">
           <select value={plan} onChange={(e) => setPlan(e.target.value)}
             className="rounded-lg border border-slate-300 px-3 py-2.5 text-sm focus:border-accent-500 focus:ring-2 focus:ring-accent-500/20 focus:outline-none">
-            <option value="free">Free</option>
-            <option value="pro">Pro</option>
-            <option value="enterprise">Enterprise</option>
+            <option value="free">{t('admin.plans.free')}</option>
+            <option value="pro">{t('admin.plans.pro')}</option>
+            <option value="enterprise">{t('admin.plans.enterprise')}</option>
           </select>
           <button onClick={savePlan} disabled={saving}
             className="rounded-lg bg-accent-500 text-white px-4 py-2.5 text-sm font-medium hover:bg-accent-600 disabled:opacity-50">
-            Save Plan
+            {t('admin.userDetail.savePlan')}
           </button>
         </div>
       </div>
 
       {/* Status */}
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 mb-6">
-        <h2 className="text-lg font-semibold text-slate-900 mb-4">Status</h2>
+        <h2 className="text-lg font-semibold text-slate-900 mb-4">{t('admin.userDetail.status')}</h2>
         <div className="flex items-center gap-4">
           <Badge variant={
             status === 'active' ? 'success' :
@@ -195,21 +197,21 @@ export default function UserDetail() {
                 onClick={handleSuspend}
                 className="inline-flex items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 text-amber-700 px-3 py-2 text-sm font-medium hover:bg-amber-100 transition-colors"
               >
-                <Ban size={14} /> Suspend
+                <Ban size={14} /> {t('admin.users.suspend')}
               </button>
             ) : status === 'suspended' ? (
               <button
                 onClick={handleActivate}
                 className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-50 text-emerald-700 px-3 py-2 text-sm font-medium hover:bg-emerald-100 transition-colors"
               >
-                <PlayCircle size={14} /> Activate
+                <PlayCircle size={14} /> {t('admin.users.activate')}
               </button>
             ) : null}
             <button
               onClick={handleDelete}
               className="inline-flex items-center gap-1.5 rounded-lg border border-red-300 bg-red-50 text-red-700 px-3 py-2 text-sm font-medium hover:bg-red-100 transition-colors"
             >
-              <Trash2 size={14} /> Delete
+              <Trash2 size={14} /> {t('common.delete')}
             </button>
           </div>
         </div>
@@ -217,7 +219,7 @@ export default function UserDetail() {
 
       {/* Quota */}
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
-        <h2 className="text-lg font-semibold text-slate-900 mb-4">Quota</h2>
+        <h2 className="text-lg font-semibold text-slate-900 mb-4">{t('admin.userDetail.quota')}</h2>
         <div className="grid grid-cols-2 gap-4">
           {quotaFields.map(({ key, label }) => (
             <div key={key}>
@@ -233,7 +235,7 @@ export default function UserDetail() {
         </div>
         <button onClick={saveQuota} disabled={saving}
           className="mt-4 rounded-lg bg-accent-500 text-white px-4 py-2.5 text-sm font-medium hover:bg-accent-600 disabled:opacity-50">
-          Save Quota
+          {t('admin.userDetail.saveQuota')}
         </button>
       </div>
     </div>
