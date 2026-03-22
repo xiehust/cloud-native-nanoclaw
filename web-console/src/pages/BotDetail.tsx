@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import {
   LayoutDashboard, Radio, MessageSquare, Clock, Brain,
   FolderOpen, Settings as SettingsIcon, Plus, Trash2, ExternalLink,
@@ -17,17 +18,17 @@ import {
   type ProviderPublic,
 } from '../lib/api';
 
-/* ── Tab definitions ───────────────────────────────────────────────── */
+/* ── Tab icon map (labels are i18n'd inside BotDetail) ─────────────── */
 
-const tabs = [
-  { key: 'overview', label: 'Overview', icon: <LayoutDashboard size={16} /> },
-  { key: 'channels', label: 'Channels', icon: <Radio size={16} /> },
-  { key: 'conversations', label: 'Conversations', icon: <MessageSquare size={16} /> },
-  { key: 'tasks', label: 'Tasks', icon: <Clock size={16} /> },
-  { key: 'memory', label: 'Memory', icon: <Brain size={16} /> },
-  { key: 'files', label: 'Files', icon: <FolderOpen size={16} /> },
-  { key: 'settings', label: 'Settings', icon: <SettingsIcon size={16} /> },
-];
+const tabIcons: Record<string, React.ReactNode> = {
+  overview: <LayoutDashboard size={16} />,
+  channels: <Radio size={16} />,
+  conversations: <MessageSquare size={16} />,
+  tasks: <Clock size={16} />,
+  memory: <Brain size={16} />,
+  files: <FolderOpen size={16} />,
+  settings: <SettingsIcon size={16} />,
+};
 
 /* ── Overview tab ──────────────────────────────────────────────────── */
 
@@ -58,19 +59,20 @@ function OverviewTab({
   conversationCount: number;
   taskCount: number;
 }) {
+  const { t } = useTranslation();
 
   return (
     <div className="space-y-6">
       {/* Bot info card */}
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-base font-semibold text-slate-900">Bot Details</h2>
+          <h2 className="text-base font-semibold text-slate-900">{t('botDetail.overview.botDetails')}</h2>
           {!editing && (
             <button
               onClick={() => setEditing(true)}
               className="text-sm text-accent-600 hover:text-accent-700 font-medium transition-colors"
             >
-              Edit
+              {t('common.edit')}
             </button>
           )}
         </div>
@@ -78,7 +80,7 @@ function OverviewTab({
         {editing ? (
           <div className="space-y-3">
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Name</label>
+              <label className="block text-sm font-medium text-slate-700 mb-1">{t('botDetail.overview.name')}</label>
               <input
                 value={editName}
                 onChange={e => setEditName(e.target.value)}
@@ -86,11 +88,11 @@ function OverviewTab({
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Description</label>
+              <label className="block text-sm font-medium text-slate-700 mb-1">{t('botDetail.overview.description')}</label>
               <textarea
                 value={editDesc}
                 onChange={e => setEditDesc(e.target.value)}
-                placeholder="Description..."
+                placeholder={t('botDetail.overview.descriptionPlaceholder')}
                 rows={3}
                 className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-accent-500 focus:ring-2 focus:ring-accent-500/20 focus:outline-none resize-none"
               />
@@ -100,30 +102,30 @@ function OverviewTab({
                 onClick={saveBot}
                 className="rounded-lg bg-accent-500 text-white px-4 py-2 text-sm font-medium hover:bg-accent-600 transition-colors"
               >
-                Save
+                {t('common.save')}
               </button>
               <button
                 onClick={() => setEditing(false)}
                 className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors"
               >
-                Cancel
+                {t('common.cancel')}
               </button>
             </div>
           </div>
         ) : (
           <div className="space-y-2">
             <div>
-              <span className="text-sm text-slate-500">Name</span>
+              <span className="text-sm text-slate-500">{t('botDetail.overview.name')}</span>
               <p className="text-sm font-medium text-slate-900">{bot.name}</p>
             </div>
             {bot.description && (
               <div>
-                <span className="text-sm text-slate-500">Description</span>
+                <span className="text-sm text-slate-500">{t('botDetail.overview.description')}</span>
                 <p className="text-sm text-slate-700">{bot.description}</p>
               </div>
             )}
             <div>
-              <span className="text-sm text-slate-500">Trigger</span>
+              <span className="text-sm text-slate-500">{t('botDetail.overview.trigger')}</span>
               <p className="text-sm font-medium text-slate-900">{bot.triggerPattern}</p>
             </div>
           </div>
@@ -132,17 +134,17 @@ function OverviewTab({
 
       {/* Model / Provider card */}
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
-        <h2 className="text-base font-semibold text-slate-900 mb-4">Model</h2>
+        <h2 className="text-base font-semibold text-slate-900 mb-4">{t('botDetail.overview.model')}</h2>
 
         {providersList.length === 0 ? (
           <div className="text-sm text-slate-500 py-4">
-            No model providers available. Contact your administrator.
+            {t('botDetail.overview.noProviders')}
           </div>
         ) : (
           <div className="space-y-4">
             {/* Provider dropdown */}
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Provider</label>
+              <label className="block text-sm font-medium text-slate-700 mb-1">{t('botDetail.overview.provider')}</label>
               <select
                 value={selectedProviderId}
                 onChange={(e) => {
@@ -155,7 +157,7 @@ function OverviewTab({
               >
                 {providersList.map(p => (
                   <option key={p.providerId} value={p.providerId}>
-                    {p.providerName} ({p.providerType === 'bedrock' ? 'Bedrock' : 'Anthropic API'})
+                    {p.providerName} ({p.providerType === 'bedrock' ? t('botDetail.overview.bedrock') : t('botDetail.overview.anthropicApi')})
                   </option>
                 ))}
               </select>
@@ -163,7 +165,7 @@ function OverviewTab({
 
             {/* Model dropdown */}
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Model</label>
+              <label className="block text-sm font-medium text-slate-700 mb-1">{t('botDetail.overview.model')}</label>
               <select
                 value={selectedModelId}
                 onChange={(e) => setSelectedModelId(e.target.value)}
@@ -182,10 +184,10 @@ function OverviewTab({
                 disabled={savingModel || !selectedProviderId || !selectedModelId}
                 className="rounded-lg bg-accent-500 text-white px-4 py-2 text-sm font-medium hover:bg-accent-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {savingModel ? 'Saving...' : 'Save Model'}
+                {savingModel ? t('common.saving') : t('botDetail.overview.saveModel')}
               </button>
-              {modelStatus === 'saved' && <span className="text-sm text-emerald-600">Saved</span>}
-              {modelStatus === 'error' && <span className="text-sm text-red-600">Failed to save</span>}
+              {modelStatus === 'saved' && <span className="text-sm text-emerald-600">{t('common.saved')}</span>}
+              {modelStatus === 'error' && <span className="text-sm text-red-600">{t('common.failedToSave')}</span>}
             </div>
           </div>
         )}
@@ -195,15 +197,15 @@ function OverviewTab({
       <div className="grid grid-cols-3 gap-4">
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5 text-center">
           <p className="text-2xl font-semibold text-slate-900">{channelCount}</p>
-          <p className="text-sm text-slate-500 mt-1">Channels</p>
+          <p className="text-sm text-slate-500 mt-1">{t('botDetail.overview.channels')}</p>
         </div>
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5 text-center">
           <p className="text-2xl font-semibold text-slate-900">{conversationCount}</p>
-          <p className="text-sm text-slate-500 mt-1">Conversations</p>
+          <p className="text-sm text-slate-500 mt-1">{t('botDetail.overview.conversations')}</p>
         </div>
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5 text-center">
           <p className="text-2xl font-semibold text-slate-900">{taskCount}</p>
-          <p className="text-sm text-slate-500 mt-1">Tasks</p>
+          <p className="text-sm text-slate-500 mt-1">{t('botDetail.overview.tasks')}</p>
         </div>
       </div>
     </div>
@@ -219,6 +221,8 @@ function ChannelsTab({
   channelsList: ChannelConfig[];
   loadData: () => void;
 }) {
+  const { t } = useTranslation();
+
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
       {channelsList.map((ch) => (
@@ -232,7 +236,7 @@ function ChannelsTab({
                   ch.status === 'pending_webhook' ? 'warning' : 'error'
                 }
               >
-                {ch.status === 'pending_webhook' ? 'Setup Incomplete' : ch.status}
+                {ch.status === 'pending_webhook' ? t('botDetail.channels.setupIncomplete') : ch.status}
               </Badge>
             </div>
             {ch.status === 'pending_webhook' && (
@@ -240,20 +244,20 @@ function ChannelsTab({
                 to={`/bots/${botId}/channels/setup?resume=${ch.channelType}`}
                 className="inline-flex items-center gap-1 text-sm text-accent-600 hover:text-accent-700 font-medium"
               >
-                Resume Setup <ExternalLink size={14} />
+                {t('botDetail.channels.resumeSetup')} <ExternalLink size={14} />
               </Link>
             )}
           </div>
           <div className="mt-4 pt-3 border-t border-slate-100">
             <button
               onClick={() => {
-                if (confirm(`Remove ${ch.channelType} channel?`)) {
+                if (confirm(t('botDetail.channels.removeConfirm', { channelType: ch.channelType }))) {
                   channelsApi.delete(botId, ch.channelType).then(loadData);
                 }
               }}
               className="inline-flex items-center gap-1.5 text-red-500 hover:text-red-700 text-sm transition-colors"
             >
-              <Trash2 size={14} /> Remove
+              <Trash2 size={14} /> {t('common.remove')}
             </button>
           </div>
         </div>
@@ -265,7 +269,7 @@ function ChannelsTab({
         className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-slate-300 p-5 text-slate-400 hover:border-accent-400 hover:text-accent-500 transition-colors min-h-[120px]"
       >
         <Plus size={24} />
-        <span className="text-sm font-medium mt-2">Add Channel</span>
+        <span className="text-sm font-medium mt-2">{t('botDetail.channels.addChannel')}</span>
       </Link>
     </div>
   );
@@ -279,12 +283,14 @@ function ConversationsTab({
   botId: string;
   groupsList: Group[];
 }) {
+  const { t } = useTranslation();
+
   if (groupsList.length === 0) {
     return (
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-8 text-center">
         <MessageSquare size={32} className="mx-auto text-slate-300 mb-3" />
         <p className="text-sm text-slate-500">
-          No conversations yet. Messages will appear here once users interact with your bot.
+          {t('botDetail.conversations.noConversations')}
         </p>
       </div>
     );
@@ -295,10 +301,10 @@ function ConversationsTab({
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b border-slate-200 bg-slate-50">
-            <th className="text-left px-5 py-3 font-medium text-slate-600">Name</th>
-            <th className="text-left px-5 py-3 font-medium text-slate-600">Channel</th>
-            <th className="text-left px-5 py-3 font-medium text-slate-600">Last Active</th>
-            <th className="text-right px-5 py-3 font-medium text-slate-600">Actions</th>
+            <th className="text-left px-5 py-3 font-medium text-slate-600">{t('botDetail.conversations.name')}</th>
+            <th className="text-left px-5 py-3 font-medium text-slate-600">{t('botDetail.conversations.channel')}</th>
+            <th className="text-left px-5 py-3 font-medium text-slate-600">{t('botDetail.conversations.lastActive')}</th>
+            <th className="text-right px-5 py-3 font-medium text-slate-600">{t('botDetail.conversations.actions')}</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-100">
@@ -323,7 +329,7 @@ function ConversationsTab({
                   to={`/bots/${botId}/groups/${encodeURIComponent(g.groupJid)}/memory`}
                   className="text-accent-600 hover:text-accent-700 font-medium transition-colors"
                 >
-                  Memory
+                  {t('botDetail.conversations.memory')}
                 </Link>
               </td>
             </tr>
@@ -343,6 +349,7 @@ function TasksTab({
   tasksList: ScheduledTask[];
   loadData: () => void;
 }) {
+  const { t } = useTranslation();
   const [showCreate, setShowCreate] = useState(false);
   const [newTask, setNewTask] = useState({ groupJid: '', prompt: '', scheduleType: 'cron', scheduleValue: '' });
   const [creating, setCreating] = useState(false);
@@ -368,7 +375,7 @@ function TasksTab({
   }
 
   async function deleteTask(taskId: string) {
-    if (!confirm('Delete this task?')) return;
+    if (!confirm(t('botDetail.tasks.deleteConfirm'))) return;
     await tasksApi.delete(botId, taskId);
     loadData();
   }
@@ -376,12 +383,12 @@ function TasksTab({
   return (
     <div className="space-y-4">
       <div className="flex justify-between items-center">
-        <p className="text-sm text-slate-500">{tasksList.length} scheduled task{tasksList.length !== 1 ? 's' : ''}</p>
+        <p className="text-sm text-slate-500">{t('botDetail.tasks.scheduledTasks', { count: tasksList.length })}</p>
         <button
           onClick={() => setShowCreate(true)}
           className="inline-flex items-center gap-1.5 rounded-lg bg-accent-500 text-white px-4 py-2 text-sm font-medium hover:bg-accent-600 transition-colors"
         >
-          <Plus size={16} /> New Task
+          <Plus size={16} /> {t('botDetail.tasks.newTask')}
         </button>
       </div>
 
@@ -389,18 +396,18 @@ function TasksTab({
       {showCreate && (
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5 space-y-3">
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Group JID</label>
+            <label className="block text-sm font-medium text-slate-700 mb-1">{t('botDetail.tasks.groupJid')}</label>
             <input
-              placeholder="e.g. group-chat-id"
+              placeholder={t('botDetail.tasks.groupJidPlaceholder')}
               value={newTask.groupJid}
               onChange={e => setNewTask(prev => ({ ...prev, groupJid: e.target.value }))}
               className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-accent-500 focus:ring-2 focus:ring-accent-500/20 focus:outline-none"
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Prompt</label>
+            <label className="block text-sm font-medium text-slate-700 mb-1">{t('botDetail.tasks.prompt')}</label>
             <textarea
-              placeholder="What should the bot do on this schedule?"
+              placeholder={t('botDetail.tasks.promptPlaceholder')}
               value={newTask.prompt}
               onChange={e => setNewTask(prev => ({ ...prev, prompt: e.target.value }))}
               rows={3}
@@ -409,7 +416,7 @@ function TasksTab({
           </div>
           <div className="flex gap-3">
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Schedule Type</label>
+              <label className="block text-sm font-medium text-slate-700 mb-1">{t('botDetail.tasks.scheduleType')}</label>
               <select
                 value={newTask.scheduleType}
                 onChange={e => setNewTask(prev => ({ ...prev, scheduleType: e.target.value }))}
@@ -421,7 +428,7 @@ function TasksTab({
               </select>
             </div>
             <div className="flex-1">
-              <label className="block text-sm font-medium text-slate-700 mb-1">Schedule Value</label>
+              <label className="block text-sm font-medium text-slate-700 mb-1">{t('botDetail.tasks.scheduleValue')}</label>
               <input
                 placeholder={newTask.scheduleType === 'cron' ? '0 9 * * *' : newTask.scheduleType === 'interval' ? '3600000' : '2025-01-01T09:00:00Z'}
                 value={newTask.scheduleValue}
@@ -436,13 +443,13 @@ function TasksTab({
               disabled={creating || !newTask.groupJid.trim() || !newTask.prompt.trim() || !newTask.scheduleValue.trim()}
               className="rounded-lg bg-accent-500 text-white px-4 py-2 text-sm font-medium hover:bg-accent-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {creating ? 'Creating...' : 'Create Task'}
+              {creating ? t('common.creating') : t('botDetail.tasks.createTask')}
             </button>
             <button
               onClick={() => setShowCreate(false)}
               className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors"
             >
-              Cancel
+              {t('common.cancel')}
             </button>
           </div>
         </div>
@@ -453,7 +460,7 @@ function TasksTab({
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-8 text-center">
           <Clock size={32} className="mx-auto text-slate-300 mb-3" />
           <p className="text-sm text-slate-500">
-            No scheduled tasks yet. Create one to have your bot run prompts on a schedule.
+            {t('botDetail.tasks.noTasks')}
           </p>
         </div>
       ) : (
@@ -467,11 +474,11 @@ function TasksTab({
                   </p>
                   <p className="text-xs text-slate-500 mt-1">
                     {task.scheduleType}: <span className="font-mono">{task.scheduleValue}</span>
-                    {' '}&middot;{' '}Group: {task.groupJid}
+                    {' '}&middot;{' '}{t('botDetail.tasks.group')}: {task.groupJid}
                   </p>
                   {task.nextRun && (
                     <p className="text-xs text-slate-400 mt-1">
-                      Next run: {new Date(task.nextRun).toLocaleString()}
+                      {t('botDetail.tasks.nextRun', { time: new Date(task.nextRun).toLocaleString() })}
                     </p>
                   )}
                 </div>
@@ -487,16 +494,16 @@ function TasksTab({
                   <button
                     onClick={() => toggleTask(task.taskId, task.status)}
                     className="inline-flex items-center gap-1 text-sm text-accent-600 hover:text-accent-700 font-medium transition-colors"
-                    title={task.status === 'active' ? 'Pause' : 'Resume'}
+                    title={task.status === 'active' ? t('botDetail.tasks.pause') : t('botDetail.tasks.resume')}
                   >
                     {task.status === 'active' ? <Pause size={14} /> : <Play size={14} />}
-                    {task.status === 'active' ? 'Pause' : 'Resume'}
+                    {task.status === 'active' ? t('botDetail.tasks.pause') : t('botDetail.tasks.resume')}
                   </button>
                   <button
                     onClick={() => deleteTask(task.taskId)}
                     className="inline-flex items-center gap-1 text-sm text-red-500 hover:text-red-700 transition-colors"
                   >
-                    <Trash2 size={14} /> Delete
+                    <Trash2 size={14} /> {t('common.delete')}
                   </button>
                 </div>
               </div>
@@ -511,6 +518,7 @@ function TasksTab({
 /* ── Memory tab ───────────────────────────────────────────────────── */
 
 function MemoryTab({ botId }: { botId: string }) {
+  const { t } = useTranslation();
   const [memoryTab, setMemoryTab] = useState<'bot' | 'shared'>('bot');
   const [content, setContent] = useState('');
   const [loading, setLoading] = useState(true);
@@ -555,8 +563,18 @@ function MemoryTab({ botId }: { botId: string }) {
   }
 
   const tabMeta = {
-    bot: { label: 'Bot Memory', description: 'Bot operating manual — identity, personality, rules, and notes (CLAUDE.md)', placeholder: 'Enter bot memory content...' },
-    shared: { label: 'Shared Memory', description: 'Memory shared across all bots (CLAUDE.md)', placeholder: 'Enter shared memory content...' },
+    bot: {
+      label: t('botDetail.memory.botMemory'),
+      description: t('botDetail.memory.botMemoryDesc'),
+      placeholder: t('botDetail.memory.botMemoryPlaceholder'),
+      saveLabel: t('botDetail.memory.saveBotMemory'),
+    },
+    shared: {
+      label: t('botDetail.memory.sharedMemory'),
+      description: t('botDetail.memory.sharedMemoryDesc'),
+      placeholder: t('botDetail.memory.sharedMemoryPlaceholder'),
+      saveLabel: t('botDetail.memory.saveSharedMemory'),
+    },
   };
   const meta = tabMeta[memoryTab];
 
@@ -583,7 +601,7 @@ function MemoryTab({ botId }: { botId: string }) {
       <p className="text-sm text-slate-500">{meta.description}</p>
 
       {loading ? (
-        <div className="text-center py-12 text-slate-500 text-sm">Loading...</div>
+        <div className="text-center py-12 text-slate-500 text-sm">{t('common.loading')}</div>
       ) : (
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
           <textarea
@@ -599,10 +617,10 @@ function MemoryTab({ botId }: { botId: string }) {
               disabled={saving}
               className="inline-flex items-center gap-1.5 rounded-lg bg-accent-500 text-white px-4 py-2 text-sm font-medium hover:bg-accent-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              <Save size={16} /> {saving ? 'Saving...' : `Save ${meta.label}`}
+              <Save size={16} /> {saving ? t('common.saving') : meta.saveLabel}
             </button>
-            {status === 'saved' && <span className="text-sm text-emerald-600">Saved successfully</span>}
-            {status === 'error' && <span className="text-sm text-red-600">Failed to save</span>}
+            {status === 'saved' && <span className="text-sm text-emerald-600">{t('common.savedSuccessfully')}</span>}
+            {status === 'error' && <span className="text-sm text-red-600">{t('common.failedToSave')}</span>}
           </div>
         </div>
       )}
@@ -619,6 +637,7 @@ function SettingsTab({
   botId: string;
   loadData: () => void;
 }) {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const [trigger, setTrigger] = useState(bot.triggerPattern);
   const [savingTrigger, setSavingTrigger] = useState(false);
@@ -642,7 +661,7 @@ function SettingsTab({
   }
 
   async function deleteBot() {
-    if (!window.confirm(`Are you sure you want to delete "${bot.name}"? This action cannot be undone.`)) return;
+    if (!window.confirm(t('botDetail.settings.deleteBotConfirm', { name: bot.name }))) return;
     setDeleting(true);
     try {
       await botsApi.delete(botId);
@@ -657,15 +676,15 @@ function SettingsTab({
     <div className="space-y-6">
       {/* Trigger pattern */}
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
-        <h2 className="text-base font-semibold text-slate-900 mb-1">Trigger Pattern</h2>
+        <h2 className="text-base font-semibold text-slate-900 mb-1">{t('botDetail.settings.triggerPattern')}</h2>
         <p className="text-sm text-slate-500 mb-4">
-          The regex pattern that activates this bot in group chats. Messages matching this pattern will be forwarded to the agent.
+          {t('botDetail.settings.triggerDesc')}
         </p>
         <div className="flex gap-3 items-start">
           <input
             value={trigger}
             onChange={e => setTrigger(e.target.value)}
-            placeholder="e.g. ^@bot\\b"
+            placeholder={t('botDetail.settings.triggerPlaceholder')}
             className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono focus:border-accent-500 focus:ring-2 focus:ring-accent-500/20 focus:outline-none"
           />
           <button
@@ -673,28 +692,28 @@ function SettingsTab({
             disabled={savingTrigger || trigger === bot.triggerPattern}
             className="rounded-lg bg-accent-500 text-white px-4 py-2 text-sm font-medium hover:bg-accent-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {savingTrigger ? 'Saving...' : 'Save'}
+            {savingTrigger ? t('common.saving') : t('common.save')}
           </button>
         </div>
-        {triggerStatus === 'saved' && <p className="text-sm text-emerald-600 mt-2">Saved</p>}
-        {triggerStatus === 'error' && <p className="text-sm text-red-600 mt-2">Failed to save</p>}
+        {triggerStatus === 'saved' && <p className="text-sm text-emerald-600 mt-2">{t('common.saved')}</p>}
+        {triggerStatus === 'error' && <p className="text-sm text-red-600 mt-2">{t('common.failedToSave')}</p>}
       </div>
 
       {/* Danger zone */}
       <div className="bg-white rounded-xl shadow-sm border-2 border-red-200 p-5">
         <div className="flex items-center gap-2 mb-1">
           <AlertTriangle size={18} className="text-red-500" />
-          <h2 className="text-base font-semibold text-red-700">Danger Zone</h2>
+          <h2 className="text-base font-semibold text-red-700">{t('botDetail.settings.dangerZone')}</h2>
         </div>
         <p className="text-sm text-slate-500 mb-4">
-          Deleting this bot will permanently remove all its channels, conversations, tasks, memory, and session data.
+          {t('botDetail.settings.dangerDesc')}
         </p>
         <button
           onClick={deleteBot}
           disabled={deleting}
           className="inline-flex items-center gap-1.5 rounded-lg bg-red-600 text-white px-4 py-2 text-sm font-medium hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          <Trash2 size={16} /> {deleting ? 'Deleting...' : 'Delete Bot'}
+          <Trash2 size={16} /> {deleting ? t('common.deleting') : t('botDetail.settings.deleteBot')}
         </button>
       </div>
     </div>
@@ -704,6 +723,7 @@ function SettingsTab({
 /* ── Main component ────────────────────────────────────────────────── */
 
 export default function BotDetail() {
+  const { t } = useTranslation();
   const { botId } = useParams<{ botId: string }>();
   const [bot, setBot] = useState<Bot | null>(null);
   const [channelsList, setChannels] = useState<ChannelConfig[]>([]);
@@ -719,6 +739,12 @@ export default function BotDetail() {
   const [savingModel, setSavingModel] = useState(false);
   const [modelStatus, setModelStatus] = useState<'saved' | 'error' | null>(null);
   const [activeTab, setActiveTab] = useState('overview');
+
+  const tabs = Object.keys(tabIcons).map(key => ({
+    key,
+    label: t(`botDetail.tabs.${key}`),
+    icon: tabIcons[key],
+  }));
 
   useEffect(() => { if (botId) loadData(); }, [botId]);
 
@@ -779,8 +805,8 @@ export default function BotDetail() {
     }
   }
 
-  if (loading) return <div className="text-center py-12 text-slate-500">Loading...</div>;
-  if (!bot) return <div className="text-center py-12 text-slate-500">Bot not found</div>;
+  if (loading) return <div className="text-center py-12 text-slate-500">{t('common.loading')}</div>;
+  if (!bot) return <div className="text-center py-12 text-slate-500">{t('common.botNotFound')}</div>;
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -837,8 +863,8 @@ export default function BotDetail() {
         {activeTab === 'files' && (
           <div className="space-y-4">
             <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold text-slate-900">Files</h2>
-              <p className="text-sm text-slate-500">Browse agent workspace on S3</p>
+              <h2 className="text-lg font-semibold text-slate-900">{t('botDetail.files.title')}</h2>
+              <p className="text-sm text-slate-500">{t('botDetail.files.subtitle')}</p>
             </div>
             <FileBrowser botId={botId!} />
           </div>
