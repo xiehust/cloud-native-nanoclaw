@@ -22,12 +22,13 @@ import { getChannelCredentials } from '../../services/cached-lookups.js';
 import { verifyChannelCredentials } from '../../channels/index.js';
 import * as telegram from '../../channels/telegram.js';
 import { getFeishuGatewayManager } from '../../feishu/gateway-manager.js';
+import { getDingTalkGatewayManager } from '../../dingtalk/gateway-manager.js';
 import type { ChannelConfig, CreateChannelRequest } from '@clawbot/shared';
 
 const secrets = new SecretsManagerClient({ region: config.region });
 
 const createChannelSchema = z.object({
-  channelType: z.enum(['telegram', 'discord', 'slack', 'whatsapp', 'feishu']),
+  channelType: z.enum(['telegram', 'discord', 'slack', 'whatsapp', 'feishu', 'dingtalk']),
   credentials: z.record(z.string(), z.string()),
 });
 
@@ -123,6 +124,9 @@ export const channelsRoutes: FastifyPluginAsync = async (app) => {
       // Feishu uses WebSocket (WSClient) — no webhook URL needed.
       // Connection is established automatically via the gateway manager.
       autoConnected = true;
+    } else if (body.channelType === 'dingtalk') {
+      // Stream mode — auto-connect via gateway manager
+      autoConnected = true;
     } else {
       // Discord, Slack, WhatsApp require manual webhook configuration
       const instructions: Record<string, string> = {
@@ -160,6 +164,16 @@ export const channelsRoutes: FastifyPluginAsync = async (app) => {
       if (feishuGw) {
         feishuGw.addBot(botId).catch((err) => {
           request.log.error({ err, botId }, 'Failed to add Feishu WSClient for new channel');
+        });
+      }
+    }
+
+    // Signal the DingTalk gateway manager to add this bot's Stream connection
+    if (body.channelType === 'dingtalk') {
+      const dingtalkGw = getDingTalkGatewayManager();
+      if (dingtalkGw) {
+        dingtalkGw.addBot(botId).catch((err) => {
+          request.log.error({ err, botId }, 'Failed to add DingTalk Stream connection for new channel');
         });
       }
     }
@@ -326,6 +340,14 @@ export const channelsRoutes: FastifyPluginAsync = async (app) => {
         const feishuGw = getFeishuGatewayManager();
         if (feishuGw) {
           feishuGw.removeBot(botId);
+        }
+      }
+
+      // Signal the DingTalk gateway manager to remove this bot's Stream connection
+      if (channelType === 'dingtalk') {
+        const dingtalkGw = getDingTalkGatewayManager();
+        if (dingtalkGw) {
+          dingtalkGw.removeBot(botId);
         }
       }
 

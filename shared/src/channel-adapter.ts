@@ -20,6 +20,11 @@ export interface ReplyContext {
   // Feishu-specific
   feishuChatId?: string;
   feishuMessageId?: string;
+  // DingTalk-specific
+  dingtalkConversationId?: string;
+  dingtalkMsgId?: string;
+  dingtalkSessionWebhook?: string;
+  dingtalkIsGroup?: boolean;
 }
 
 // --- Reply Options ---

@@ -119,6 +119,18 @@ You are responding on WhatsApp.
 - Message limit is 65536 characters but keep responses concise
 - WhatsApp users expect conversational, brief responses
 - Avoid long-form content; use short paragraphs`,
+
+  dingtalk: `
+## DingTalk Formatting
+- Use Markdown for formatting (钉钉 supports standard Markdown)
+- Supported: **bold**, *italic*, [links](url), \`code\`, code blocks with triple backticks
+- Headers: # to ######
+- Ordered and unordered lists supported
+- Max recommended message length: 4000 characters
+- DingTalk renders Markdown natively in card messages
+- Use concise, structured replies — enterprise users prefer efficiency
+- Avoid excessive emojis in enterprise context
+`,
 };
 
 function buildChannelGuidance(channelType: ChannelType): string {

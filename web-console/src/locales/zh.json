@@ -193,7 +193,9 @@
       "appSecret": "App Secret",
       "encryptKey": "Encrypt Key (加密密钥)",
       "verificationToken": "Verification Token (验证令牌)",
-      "domain": "域"
+      "domain": "域",
+      "clientId": "ClientId (AppKey)",
+      "clientSecret": "ClientSecret (AppSecret)"
     },
     "telegram": {
       "label": "Telegram",
@@ -342,6 +344,30 @@
       "afterStep5desc": "在群组中 @机器人 或私聊发消息进行测试",
       "feishuDomain": "飞书 (feishu.cn)",
       "larkDomain": "Lark (larksuite.com)"
+    },
+    "dingtalk": {
+      "label": "钉钉",
+      "desc": "Stream 长连接",
+      "guideTitle": "钉钉企业机器人配置指南",
+      "step1title": "创建应用",
+      "step1desc": "打开 <0>钉钉开放平台</0> → 创建企业内部应用",
+      "step2title": "启用机器人",
+      "step2desc": "在「应用能力」中启用「机器人」能力",
+      "step3title": "开启 Stream 模式",
+      "step3desc": "在「机器人配置」中选择 Stream 模式接收消息",
+      "step4title": "获取凭证",
+      "step4desc": "在「凭证与基础信息」页面获取 ClientId 和 ClientSecret",
+      "connectedTitle": "钉钉已连接",
+      "connectedDesc": "Stream 连接已建立，请完成以下步骤：",
+      "afterStep1title": "申请权限",
+      "afterStep1desc": "在「权限管理」中申请企业内机器人所需权限",
+      "afterStep2title": "发布应用",
+      "afterStep2desc": "点击「版本管理与发布」发布应用",
+      "afterStep3title": "添加到群聊",
+      "afterStep3desc": "在钉钉群设置 → 智能群助手 → 添加机器人 → 选择你的应用",
+      "afterStep4title": "测试",
+      "afterStep4desc": "在群聊中 @Bot 发送消息，或直接私聊 Bot",
+      "fillCredentials": "请填入 ClientId 和 ClientSecret："
     }
   },
   "messages": {

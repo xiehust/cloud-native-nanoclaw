@@ -193,7 +193,9 @@
       "appSecret": "App Secret",
       "encryptKey": "Encrypt Key",
       "verificationToken": "Verification Token",
-      "domain": "Domain"
+      "domain": "Domain",
+      "clientId": "ClientId (AppKey)",
+      "clientSecret": "ClientSecret (AppSecret)"
     },
     "telegram": {
       "label": "Telegram",
@@ -342,6 +344,30 @@
       "afterStep5desc": "Test by @mentioning the bot in a group or sending a direct message",
       "feishuDomain": "\u98de\u4e66 (feishu.cn)",
       "larkDomain": "Lark (larksuite.com)"
+    },
+    "dingtalk": {
+      "label": "DingTalk",
+      "desc": "Stream connection",
+      "guideTitle": "DingTalk Enterprise Bot Setup",
+      "step1title": "Create Application",
+      "step1desc": "Go to <0>DingTalk Open Platform</0> → Create Internal Enterprise App",
+      "step2title": "Enable Robot",
+      "step2desc": "In App Capabilities, enable the Robot capability",
+      "step3title": "Enable Stream Mode",
+      "step3desc": "In Robot Configuration, select Stream mode for receiving messages",
+      "step4title": "Get Credentials",
+      "step4desc": "Copy ClientId (AppKey) and ClientSecret (AppSecret) from Credentials page",
+      "connectedTitle": "DingTalk Connected",
+      "connectedDesc": "Stream connection established. Complete these steps:",
+      "afterStep1title": "Request Permissions",
+      "afterStep1desc": "Request required permissions in Permission Management",
+      "afterStep2title": "Publish App",
+      "afterStep2desc": "Go to Version Management and publish your app",
+      "afterStep3title": "Add to Group",
+      "afterStep3desc": "In DingTalk group settings → Smart Assistant → Add Robot → Select your app",
+      "afterStep4title": "Test",
+      "afterStep4desc": "Send a message mentioning @Bot in a group, or DM the bot directly",
+      "fillCredentials": "Enter your ClientId and ClientSecret below:"
     }
   },
   "messages": {

@@ -8,7 +8,7 @@ import {
 import { clsx } from 'clsx';
 import { channels as channelsApi } from '../lib/api';
 
-type ChannelType = 'telegram' | 'discord' | 'slack' | 'feishu';
+type ChannelType = 'telegram' | 'discord' | 'slack' | 'feishu' | 'dingtalk';
 
 interface FieldDef {
   name: string;
@@ -36,6 +36,10 @@ function useChannelFields(): Record<ChannelType, FieldDef[]> {
       { name: 'verificationToken', label: t('channelSetup.fields.verificationToken'), placeholder: 'Verification Token from event subscription settings', type: 'password' },
       { name: 'domain', label: t('channelSetup.fields.domain'), placeholder: 'feishu' },
     ],
+    dingtalk: [
+      { name: 'clientId', label: t('channelSetup.fields.clientId'), placeholder: 'dingxxxxxxxxxx' },
+      { name: 'clientSecret', label: t('channelSetup.fields.clientSecret'), placeholder: 'xxxxxxxxxxxxxxxx', type: 'password' },
+    ],
   };
 }
 
@@ -46,6 +50,7 @@ function useChannelMeta(): Record<ChannelType, { icon: React.ReactNode; label: s
     discord: { icon: <Hash size={20} />, label: t('channelSetup.discord.label'), desc: t('channelSetup.discord.desc') },
     slack: { icon: <MessageSquare size={20} />, label: t('channelSetup.slack.label'), desc: t('channelSetup.slack.desc') },
     feishu: { icon: <Bird size={20} />, label: t('channelSetup.feishu.label'), desc: t('channelSetup.feishu.desc') },
+    dingtalk: { icon: <MessageSquare size={20} />, label: t('channelSetup.dingtalk.label'), desc: t('channelSetup.dingtalk.desc') },
   };
 }
 
@@ -721,6 +726,106 @@ function FeishuGuide({ step }: { step: 'before' | 'after' }) {
   );
 }
 
+function DingTalkGuide({ step }: { step: 'before' | 'after' }) {
+  const { t } = useTranslation();
+
+  if (step === 'before') {
+    return (
+      <div className="border border-slate-200 rounded-xl bg-white p-5 space-y-4 text-sm">
+        <h3 className="font-semibold text-slate-900 text-base">{t('channelSetup.dingtalk.guideTitle')}</h3>
+
+        <div className="space-y-3">
+          <div className="flex gap-3">
+            <StepNum n={1} />
+            <div>
+              <p className="font-medium text-slate-900">{t('channelSetup.dingtalk.step1title')}</p>
+              <p className="text-slate-600 mt-0.5">
+                <Trans i18nKey="channelSetup.dingtalk.step1desc">
+                  打开 <a href="https://open.dingtalk.com" target="_blank" rel="noopener noreferrer" className="underline font-medium text-accent-600 hover:text-accent-700">钉钉开放平台</a> → 创建企业内部应用
+                </Trans>
+              </p>
+            </div>
+          </div>
+
+          <div className="flex gap-3">
+            <StepNum n={2} />
+            <div>
+              <p className="font-medium text-slate-900">{t('channelSetup.dingtalk.step2title')}</p>
+              <p className="text-slate-600 mt-0.5">{t('channelSetup.dingtalk.step2desc')}</p>
+            </div>
+          </div>
+
+          <div className="flex gap-3">
+            <StepNum n={3} />
+            <div>
+              <p className="font-medium text-slate-900">{t('channelSetup.dingtalk.step3title')}</p>
+              <p className="text-slate-600 mt-0.5">{t('channelSetup.dingtalk.step3desc')}</p>
+            </div>
+          </div>
+
+          <div className="flex gap-3">
+            <StepNum n={4} />
+            <div>
+              <p className="font-medium text-slate-900">{t('channelSetup.dingtalk.step4title')}</p>
+              <p className="text-slate-600 mt-0.5">{t('channelSetup.dingtalk.step4desc')}</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="border-t border-slate-200 pt-3 mt-3">
+          <p className="text-slate-700 font-medium">{t('channelSetup.dingtalk.fillCredentials')}</p>
+        </div>
+      </div>
+    );
+  }
+
+  // step === 'after'
+  return (
+    <div className="border border-green-300 bg-green-50 rounded-xl p-5 space-y-4 text-sm">
+      <div className="flex items-center gap-2">
+        <CheckCircle2 size={20} className="text-green-600" />
+        <h3 className="font-semibold text-green-900 text-base">{t('channelSetup.dingtalk.connectedTitle')}</h3>
+      </div>
+
+      <p className="text-green-800">{t('channelSetup.dingtalk.connectedDesc')}</p>
+
+      <div className="space-y-3">
+        <div className="flex gap-3">
+          <StepNum n={1} variant="success" />
+          <div>
+            <p className="font-medium text-green-900">{t('channelSetup.dingtalk.afterStep1title')}</p>
+            <p className="text-green-700 mt-0.5">{t('channelSetup.dingtalk.afterStep1desc')}</p>
+          </div>
+        </div>
+
+        <div className="flex gap-3">
+          <StepNum n={2} variant="success" />
+          <div>
+            <p className="font-medium text-green-900">{t('channelSetup.dingtalk.afterStep2title')}</p>
+            <p className="text-green-700 mt-0.5">{t('channelSetup.dingtalk.afterStep2desc')}</p>
+          </div>
+        </div>
+
+        <div className="flex gap-3">
+          <StepNum n={3} variant="success" />
+          <div>
+            <p className="font-medium text-green-900">{t('channelSetup.dingtalk.afterStep3title')}</p>
+            <p className="text-green-700 mt-0.5">{t('channelSetup.dingtalk.afterStep3desc')}</p>
+          </div>
+        </div>
+
+        <div className="flex gap-3">
+          <StepNum n={4} variant="success" />
+          <div>
+            <p className="font-medium text-green-900">{t('channelSetup.dingtalk.afterStep4title')}</p>
+            <p className="text-green-700 mt-0.5">{t('channelSetup.dingtalk.afterStep4desc')}</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function ChannelSetup() {
   const { t } = useTranslation();
   const channelMeta = useChannelMeta();
@@ -813,6 +918,25 @@ export default function ChannelSetup() {
     );
   }
 
+  if (connected && channelType === 'dingtalk') {
+    return (
+      <div className="max-w-2xl mx-auto space-y-6">
+        <Link to={`/bots/${botId}`} className="inline-flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-700 transition-colors">
+          <ArrowLeft size={16} />
+          {t('common.backToBot')}
+        </Link>
+        <h1 className="text-2xl font-semibold text-slate-900">{t('channelSetup.addChannel')}</h1>
+        <DingTalkGuide step="after" />
+        <button
+          onClick={() => navigate(`/bots/${botId}`)}
+          className="w-full rounded-lg bg-accent-500 text-white px-4 py-2.5 text-sm font-medium hover:bg-accent-600 transition-colors"
+        >
+          {t('channelSetup.doneBackToBot')}
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="max-w-2xl mx-auto">
       <Link to={`/bots/${botId}`} className="inline-flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-700 transition-colors mb-4">
@@ -831,7 +955,7 @@ export default function ChannelSetup() {
         <div className="bg-white border border-slate-200 p-6 rounded-xl">
           <label className="block text-sm font-medium text-slate-700 mb-3">{t('channelSetup.channelType')}</label>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            {(['telegram', 'discord', 'slack', 'feishu'] as ChannelType[]).map((type) => {
+            {(['telegram', 'discord', 'slack', 'feishu', 'dingtalk'] as ChannelType[]).map((type) => {
               const meta = channelMeta[type];
               const selected = channelType === type;
               return (
@@ -867,6 +991,7 @@ export default function ChannelSetup() {
         {channelType === 'telegram' && <TelegramGuide />}
         {channelType === 'discord' && <DiscordGuide botId={botId!} step="before" />}
         {channelType === 'feishu' && <FeishuGuide step="before" />}
+        {channelType === 'dingtalk' && <DingTalkGuide step="before" />}
 
         {/* Credential fields */}
         {channelType && (

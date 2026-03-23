@@ -16,6 +16,7 @@ import { DiscordAdapter } from './adapters/discord/index.js';
 import { SlackAdapter } from './adapters/slack/index.js';
 import { TelegramAdapter } from './adapters/telegram/index.js';
 import { FeishuAdapter } from './adapters/feishu/index.js';
+import { DingTalkAdapter } from './adapters/dingtalk/index.js';
 
 const logger = pino({ level: process.env.LOG_LEVEL || 'info' });
 
@@ -42,6 +43,7 @@ async function main() {
   registry.register(new SlackAdapter(logger));
   registry.register(new TelegramAdapter(logger));
   registry.register(new FeishuAdapter(logger));
+  registry.register(new DingTalkAdapter(logger));
   registry.startAll().catch((err) => {
     logger.error(err, 'Failed to start channel adapters');
   });
