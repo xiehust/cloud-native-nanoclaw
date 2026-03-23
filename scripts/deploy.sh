@@ -439,7 +439,7 @@ else
         displayName:      {S: "admin"},
         plan:             {S: "enterprise"},
         status:           {S: "active"},
-        quota:            {M: {maxTokensPerMonth: {N: "999999999"}, maxBotsPerUser: {N: "100"}, maxInvocationsPerMonth: {N: "999999"}}},
+        quota:            {M: {maxBots: {N: "50"}, maxGroupsPerBot: {N: "100"}, maxTasksPerBot: {N: "200"}, maxConcurrentAgents: {N: "20"}, maxMonthlyTokens: {N: "1000000000"}}},
         usageMonth:       {S: $month},
         usageTokens:      {N: "0"},
         usageInvocations: {N: "0"},
