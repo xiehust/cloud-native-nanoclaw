@@ -105,26 +105,45 @@ export const slackWebhook: FastifyPluginAsync = async (app) => {
       const logger = request.log;
 
       try {
-        // 1. Handle url_verification challenge (Slack setup handshake)
+        // 1. Load channel credentials and verify signature FIRST (before any processing)
+        const channels = await getChannelsByBot(botId);
+        const slackChannel = channels.find(
+          (ch) => ch.channelType === 'slack',
+        );
+        if (!slackChannel) {
+          logger.warn({ botId }, 'No Slack channel configured for bot');
+          return reply.status(200).send({ ok: true });
+        }
+
+        const creds = await getChannelCredentials(slackChannel.credentialSecretArn);
+
+        // Verify Slack signature — reject if signing secret not configured
+        if (!creds.signingSecret) {
+          logger.error({ botId }, 'Slack signing secret not configured — rejecting request');
+          return reply.status(500).send({ error: 'Webhook not properly configured' });
+        }
+        const rawBody = request.rawBody ?? JSON.stringify(request.body);
+        const slackHeaders = request.headers as Record<string, string | undefined>;
+        if (!verifySlackSignature(slackHeaders, rawBody, creds.signingSecret)) {
+          logger.warn({ botId }, 'Slack signature verification failed');
+          return reply.status(401).send({ error: 'Invalid signature' });
+        }
+
+        // 2. Handle url_verification challenge (signature already verified)
         if (body.type === 'url_verification') {
           const verification = body as SlackUrlVerification;
           logger.info({ botId }, 'Slack URL verification challenge received');
 
-          // Update channel status from pending_webhook to connected
-          const channels = await getChannelsByBot(botId);
-          const slackChannel = channels.find(c => c.channelType === 'slack');
-          if (slackChannel) {
-            const channelKey = `${slackChannel.channelType}#${slackChannel.channelId}`;
-            await updateChannelHealth(botId, channelKey, 'healthy', 0, 'connected');
-            logger.info({ botId }, 'Slack channel status updated to connected (webhook verified)');
-          }
+          const channelKey = `${slackChannel.channelType}#${slackChannel.channelId}`;
+          await updateChannelHealth(botId, channelKey, 'healthy', 0, 'connected');
+          logger.info({ botId }, 'Slack channel status updated to connected (webhook verified)');
 
           return reply.status(200).send({
             challenge: verification.challenge,
           });
         }
 
-        // 2. Handle event_callback
+        // 3. Handle event_callback
         if (body.type !== 'event_callback') {
           return reply.status(200).send({ ok: true });
         }
@@ -138,7 +157,7 @@ export const slackWebhook: FastifyPluginAsync = async (app) => {
           return reply.status(200).send({ ok: true });
         }
 
-        // 3. Load bot config
+        // 4. Load bot config
         const bot = await getCachedBot(botId);
         if (!bot) {
           logger.warn({ botId }, 'Bot not found');
@@ -147,31 +166,6 @@ export const slackWebhook: FastifyPluginAsync = async (app) => {
         if (bot.status !== 'active') {
           logger.info({ botId, status: bot.status }, 'Bot not active');
           return reply.status(200).send({ ok: true });
-        }
-
-        // 4. Load channel credentials and verify signature
-        const channels = await getChannelsByBot(botId);
-        const slackChannel = channels.find(
-          (ch) => ch.channelType === 'slack',
-        );
-        if (!slackChannel) {
-          logger.warn({ botId }, 'No Slack channel configured for bot');
-          return reply.status(200).send({ ok: true });
-        }
-
-        const creds = await getChannelCredentials(slackChannel.credentialSecretArn);
-
-        // Verify Slack signature
-        if (creds.signingSecret) {
-          const rawBody = request.rawBody ?? JSON.stringify(request.body);
-          const headers = request.headers as Record<
-            string,
-            string | undefined
-          >;
-          if (!verifySlackSignature(headers, rawBody, creds.signingSecret)) {
-            logger.warn({ botId }, 'Slack signature verification failed');
-            return reply.status(401).send({ error: 'Invalid signature' });
-          }
         }
 
         // 5. Parse message

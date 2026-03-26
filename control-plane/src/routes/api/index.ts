@@ -35,18 +35,25 @@ type SinglePoolVerifier = CognitoJwtVerifierSingleUserPool<{
 }>;
 
 export const apiRoutes: FastifyPluginAsync = async (app) => {
-  // Set up Cognito JWT verification
-  let verifier: SinglePoolVerifier | null = null;
-  if (config.cognito.userPoolId && config.cognito.clientId) {
-    verifier = CognitoJwtVerifier.create({
-      userPoolId: config.cognito.userPoolId,
-      tokenUse: 'access',
-      clientId: config.cognito.clientId,
-    });
+  // Set up Cognito JWT verification — required for all environments
+  if (!config.cognito.userPoolId || !config.cognito.clientId) {
+    app.log.warn('Cognito not configured (COGNITO_USER_POOL_ID / COGNITO_CLIENT_ID missing) — all API requests will return 503');
   }
+  const verifier: SinglePoolVerifier | null =
+    config.cognito.userPoolId && config.cognito.clientId
+      ? CognitoJwtVerifier.create({
+          userPoolId: config.cognito.userPoolId,
+          tokenUse: 'access',
+          clientId: config.cognito.clientId,
+        })
+      : null;
 
   // Auth middleware — verify JWT and extract user info
   app.addHook('onRequest', async (request, reply) => {
+    if (!verifier) {
+      return reply.status(503).send({ error: 'Authentication service not configured' });
+    }
+
     const authHeader = request.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       return reply.status(401).send({ error: 'Missing or invalid Authorization header' });
@@ -54,32 +61,15 @@ export const apiRoutes: FastifyPluginAsync = async (app) => {
 
     const token = authHeader.substring(7);
 
-    if (!verifier) {
-      // Dev mode: skip verification, extract user from token payload
-      try {
-        const payload = JSON.parse(
-          Buffer.from(token.split('.')[1], 'base64').toString(),
-        );
-        request.userId = payload.sub || 'dev-user';
-        request.userEmail = payload.email || 'dev@localhost';
-        const groups = (payload['cognito:groups'] as string[]) || [];
-        request.isAdmin = groups.includes('clawbot-admins');
-      } catch {
-        request.userId = 'dev-user';
-        request.userEmail = 'dev@localhost';
-        request.isAdmin = false;
-      }
-    } else {
-      try {
-        const payload = await verifier.verify(token);
-        request.userId = payload.sub;
-        request.userEmail = (payload as Record<string, unknown>).email as string || '';
-        const groups = ((payload as Record<string, unknown>)['cognito:groups'] as string[]) || [];
-        request.isAdmin = groups.includes('clawbot-admins');
-      } catch (err) {
-        request.log.warn({ err }, 'JWT verification failed');
-        return reply.status(401).send({ error: 'Invalid or expired token' });
-      }
+    try {
+      const payload = await verifier.verify(token);
+      request.userId = payload.sub;
+      request.userEmail = (payload as Record<string, unknown>).email as string || '';
+      const groups = ((payload as Record<string, unknown>)['cognito:groups'] as string[]) || [];
+      request.isAdmin = groups.includes('clawbot-admins');
+    } catch (err) {
+      request.log.warn({ err }, 'JWT verification failed');
+      return reply.status(401).send({ error: 'Invalid or expired token' });
     }
 
     // Check user status — suspended or deleted users are forbidden

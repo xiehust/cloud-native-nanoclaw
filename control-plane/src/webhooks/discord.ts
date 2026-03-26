@@ -40,54 +40,51 @@ export const discordWebhook: FastifyPluginAsync = async (app) => {
       const logger = request.log;
 
       try {
-        // PING — Discord verification handshake
-        if (body.type === INTERACTION_PING) {
-          logger.info({ botId }, 'Discord PING received, responding with PONG');
-
-          // Update channel status to connected
-          const channels = await getChannelsByBot(botId);
-          const discordChannel = channels.find(
-            (c) => c.channelType === 'discord',
-          );
-          if (discordChannel) {
-            const channelKey = `${discordChannel.channelType}#${discordChannel.channelId}`;
-            await updateChannelHealth(
-              botId,
-              channelKey,
-              'healthy',
-              0,
-              'connected',
-            );
-          }
-
-          return reply.status(200).send({ type: 1 }); // PONG
-        }
-
-        // Verify Ed25519 signature for non-ping interactions
+        // 1. Verify Ed25519 signature for ALL interactions (including PING)
         const channels = await getChannelsByBot(botId);
         const discordChannel = channels.find(
           (ch) => ch.channelType === 'discord',
         );
-        if (discordChannel) {
-          const creds = await getChannelCredentials(
-            discordChannel.credentialSecretArn,
-          );
-          if (creds.publicKey) {
-            const rawBody = request.rawBody ?? JSON.stringify(request.body);
-            const valid = await verifyDiscordSignature(
-              request.headers as Record<string, string | undefined>,
-              rawBody,
-              creds.publicKey,
-            );
-            if (!valid) {
-              return reply
-                .status(401)
-                .send({ error: 'Invalid signature' });
-            }
-          }
+        if (!discordChannel) {
+          logger.warn({ botId }, 'No Discord channel configured for bot');
+          return reply.status(404).send({ error: 'Channel not found' });
         }
 
-        // Application commands — acknowledge only
+        const creds = await getChannelCredentials(
+          discordChannel.credentialSecretArn,
+        );
+        if (!creds.publicKey) {
+          logger.error({ botId }, 'Discord public key not configured — rejecting request');
+          return reply.status(500).send({ error: 'Webhook not properly configured' });
+        }
+
+        const rawBody = request.rawBody ?? JSON.stringify(request.body);
+        const valid = await verifyDiscordSignature(
+          request.headers as Record<string, string | undefined>,
+          rawBody,
+          creds.publicKey,
+        );
+        if (!valid) {
+          return reply.status(401).send({ error: 'Invalid signature' });
+        }
+
+        // 2. PING — Discord verification handshake (signature already verified)
+        if (body.type === INTERACTION_PING) {
+          logger.info({ botId }, 'Discord PING received, responding with PONG');
+
+          const channelKey = `${discordChannel.channelType}#${discordChannel.channelId}`;
+          await updateChannelHealth(
+            botId,
+            channelKey,
+            'healthy',
+            0,
+            'connected',
+          );
+
+          return reply.status(200).send({ type: 1 }); // PONG
+        }
+
+        // 3. Application commands — acknowledge only
         if (body.type === INTERACTION_APPLICATION_COMMAND) {
           return reply.status(200).send({
             type: 4,

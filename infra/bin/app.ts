@@ -80,6 +80,7 @@ const frontend = new FrontendStack(app, `NanoClawBot-${stage}-Frontend`, {
   userPool: auth.userPool,
   userPoolClient: auth.userPoolClient,
   alb: controlPlane.alb,
+  originVerifySecret: controlPlane.originVerifySecret,
 });
 frontend.addDependency(auth);
 frontend.addDependency(controlPlane);

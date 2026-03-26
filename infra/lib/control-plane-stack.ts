@@ -10,6 +10,7 @@ import * as sqs from 'aws-cdk-lib/aws-sqs';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as cognito from 'aws-cdk-lib/aws-cognito';
 import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
+import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 import * as wafv2 from 'aws-cdk-lib/aws-wafv2';
 import type { Construct } from 'constructs';
 
@@ -42,6 +43,8 @@ export class ControlPlaneStack extends cdk.Stack {
   public readonly alb: elbv2.ApplicationLoadBalancer;
   public readonly service: ecs.FargateService;
   public readonly cluster: ecs.Cluster;
+  /** Shared secret for X-Origin-Verify header between CloudFront and ALB */
+  public readonly originVerifySecret: string;
 
   constructor(scope: Construct, id: string, props: ControlPlaneStackProps) {
     super(scope, id, props);
@@ -59,14 +62,27 @@ export class ControlPlaneStack extends cdk.Stack {
       userPoolClient,
     } = props;
 
+    // SEC-C05: Generate a random origin verification secret, persisted in Secrets Manager.
+    // This secret is shared between CloudFront (custom origin header) and ECS (env var).
+    const originSecret = new secretsmanager.Secret(this, 'OriginVerifySecret', {
+      secretName: `nanoclawbot-${stage}-origin-verify`,
+      description: 'Shared secret for X-Origin-Verify header between CloudFront and ALB',
+      generateSecretString: {
+        excludePunctuation: true,
+        passwordLength: 32,
+      },
+    });
+    this.originVerifySecret = originSecret.secretValue.unsafeUnwrap();
+
     // ── Security Groups ─────────────────────────────────────────────────
     const albSg = new ec2.SecurityGroup(this, 'AlbSg', {
       vpc,
       description: 'ALB security group',
       allowAllOutbound: true,
     });
-    albSg.addIngressRule(ec2.Peer.anyIpv4(), ec2.Port.tcp(80), 'HTTP from anywhere');
-    albSg.addIngressRule(ec2.Peer.anyIpv4(), ec2.Port.tcp(443), 'HTTPS from anywhere');
+    // SEC-C05: ALB accepts HTTP from any IP, but the app-layer X-Origin-Verify
+    // header check ensures only CloudFront traffic is processed.
+    albSg.addIngressRule(ec2.Peer.anyIpv4(), ec2.Port.tcp(80), 'HTTP from anywhere (origin-verified at app layer)');
 
     const fargateSg = new ec2.SecurityGroup(this, 'FargateSg', {
       vpc,
@@ -137,6 +153,7 @@ export class ControlPlaneStack extends cdk.Stack {
         MESSAGE_QUEUE_ARN: props.messageQueueArn,
         WEBHOOK_BASE_URL_SSM: `/nanoclawbot/${stage}/webhook-base-url`,
         AGENTCORE_RUNTIME_ARN_SSM: `/nanoclawbot/${stage}/agentcore-runtime-arn`,
+        ORIGIN_VERIFY_SECRET: this.originVerifySecret,
       },
       logging: ecs.LogDrivers.awsLogs({
         logGroup,

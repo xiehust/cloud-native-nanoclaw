@@ -48,6 +48,9 @@ export const config = {
   // CORS
   corsOrigin: process.env.CORS_ORIGIN || '*',
 
+  // SEC-C05: Origin verification — CloudFront sends this header, ALB app validates it
+  originVerifySecret: process.env.ORIGIN_VERIFY_SECRET || '',
+
   // AgentCore — getter so resolveConfig() writes take effect
   agentcore: {
     get runtimeArn() {

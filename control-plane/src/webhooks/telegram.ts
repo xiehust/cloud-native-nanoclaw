@@ -141,13 +141,14 @@ export const telegramWebhook: FastifyPluginAsync = async (app) => {
 
         const creds = await getChannelCredentials(telegramChannel.credentialSecretArn);
 
-        // 3. Verify signature header
+        // 3. Verify signature header — reject if secret not configured
+        if (!creds.webhookSecret) {
+          logger.error({ botId }, 'Telegram webhook secret not configured — rejecting request');
+          return reply.status(500).send({ error: 'Webhook not properly configured' });
+        }
         const rawBody = request.rawBody ?? JSON.stringify(request.body);
         const headers = request.headers as Record<string, string | undefined>;
-        if (
-          creds.webhookSecret &&
-          !verifyTelegramSignature(headers, rawBody, creds.webhookSecret)
-        ) {
+        if (!verifyTelegramSignature(headers, rawBody, creds.webhookSecret)) {
           logger.warn({ botId }, 'Telegram signature verification failed');
           return reply.status(401).send({ error: 'Invalid signature' });
         }

@@ -7,7 +7,7 @@ export default function Login() {
   const { login, register, needsNewPassword, completeNewPassword } = useAuth();
   const [isRegister, setIsRegister] = useState(false);
   const [email, setEmail] = useState(() => localStorage.getItem('clawbot_saved_email') || '');
-  const [password, setPassword] = useState(() => localStorage.getItem('clawbot_saved_pass') || '');
+  const [password, setPassword] = useState('');
   const [rememberMe, setRememberMe] = useState(() => !!localStorage.getItem('clawbot_saved_email'));
   const [newPassword, setNewPassword] = useState('');
   const [error, setError] = useState('');
@@ -25,11 +25,11 @@ export default function Login() {
       } else {
         if (rememberMe) {
           localStorage.setItem('clawbot_saved_email', email);
-          localStorage.setItem('clawbot_saved_pass', password);
         } else {
           localStorage.removeItem('clawbot_saved_email');
-          localStorage.removeItem('clawbot_saved_pass');
         }
+        // Clean up any previously stored password (SEC-C04)
+        localStorage.removeItem('clawbot_saved_pass');
         await login(email, password);
       }
     } catch (err) {

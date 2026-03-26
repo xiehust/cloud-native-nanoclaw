@@ -12,6 +12,8 @@ export interface FrontendStackProps extends cdk.StackProps {
   userPool: cognito.IUserPool;
   userPoolClient: cognito.IUserPoolClient;
   alb: elbv2.IApplicationLoadBalancer;
+  /** Shared secret for X-Origin-Verify header between CloudFront and ALB */
+  originVerifySecret: string;
 }
 
 export class FrontendStack extends cdk.Stack {
@@ -38,8 +40,12 @@ export class FrontendStack extends cdk.Stack {
     });
 
     // ── ALB Origin (API + Webhooks) ──────────────────────────────────────
+    // SEC-C05: Add X-Origin-Verify header so the ALB app can reject direct access
     const albOrigin = new origins.HttpOrigin(props.alb.loadBalancerDnsName, {
       protocolPolicy: cloudfront.OriginProtocolPolicy.HTTP_ONLY,
+      customHeaders: {
+        'X-Origin-Verify': props.originVerifySecret,
+      },
     });
 
     // Origin request policy: forward all headers/query strings to ALB

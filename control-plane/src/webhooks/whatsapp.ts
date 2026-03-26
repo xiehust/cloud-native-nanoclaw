@@ -134,19 +134,21 @@ export const whatsappWebhook: FastifyPluginAsync = async (app) => {
 
         const creds = await getChannelCredentials(whatsappChannel.credentialSecretArn);
 
-        // 3. Verify HMAC-SHA256 signature
-        if (creds.appSecret) {
-          const rawBody = request.rawBody ?? JSON.stringify(request.body);
-          const signature = (request.headers as Record<string, string | undefined>)[
-            'x-hub-signature-256'
-          ];
-          if (
-            !signature ||
-            !verifyWhatsAppSignature(rawBody, signature, creds.appSecret)
-          ) {
-            logger.warn({ botId }, 'WhatsApp signature verification failed');
-            return reply.status(401).send({ error: 'Invalid signature' });
-          }
+        // 3. Verify HMAC-SHA256 signature — reject if app secret not configured
+        if (!creds.appSecret) {
+          logger.error({ botId }, 'WhatsApp app secret not configured — rejecting request');
+          return reply.status(500).send({ error: 'Webhook not properly configured' });
+        }
+        const rawBody = request.rawBody ?? JSON.stringify(request.body);
+        const signature = (request.headers as Record<string, string | undefined>)[
+          'x-hub-signature-256'
+        ];
+        if (
+          !signature ||
+          !verifyWhatsAppSignature(rawBody, signature, creds.appSecret)
+        ) {
+          logger.warn({ botId }, 'WhatsApp signature verification failed');
+          return reply.status(401).send({ error: 'Invalid signature' });
         }
 
         // 4. Parse Cloud API format: entry[].changes[].value.messages[]
