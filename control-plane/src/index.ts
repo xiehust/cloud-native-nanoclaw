@@ -1,6 +1,7 @@
 // ClawBot Cloud — Control Plane Entry Point
 // Main Fastify application: webhooks, API routes, SQS consumers
 
+import { timingSafeEqual } from 'node:crypto';
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import pino from 'pino';
@@ -30,9 +31,12 @@ async function main() {
   // SEC-C05: Reject requests not coming through CloudFront (X-Origin-Verify header check).
   // The /health endpoint is exempt because ALB health checks go directly to the container.
   if (config.originVerifySecret) {
+    const expectedBuf = Buffer.from(config.originVerifySecret);
     app.addHook('onRequest', async (request, reply) => {
       if (request.url === '/health') return; // ALB health check — no CloudFront
-      if (request.headers['x-origin-verify'] !== config.originVerifySecret) {
+      const header = request.headers['x-origin-verify'];
+      if (typeof header !== 'string' || header.length !== expectedBuf.length ||
+          !timingSafeEqual(Buffer.from(header), expectedBuf)) {
         return reply.status(403).send({ error: 'Forbidden' });
       }
     });

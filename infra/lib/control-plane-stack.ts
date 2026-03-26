@@ -1,4 +1,3 @@
-import * as crypto from 'node:crypto';
 import * as cdk from 'aws-cdk-lib';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as ecs from 'aws-cdk-lib/aws-ecs';
@@ -11,6 +10,7 @@ import * as sqs from 'aws-cdk-lib/aws-sqs';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as cognito from 'aws-cdk-lib/aws-cognito';
 import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
+import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 import * as wafv2 from 'aws-cdk-lib/aws-wafv2';
 import type { Construct } from 'constructs';
 
@@ -62,12 +62,17 @@ export class ControlPlaneStack extends cdk.Stack {
       userPoolClient,
     } = props;
 
-    // Generate a stable origin verification secret (deterministic per account/region/stage)
-    this.originVerifySecret = crypto
-      .createHash('sha256')
-      .update(`${this.account}-${this.region}-${stage}-origin-verify`)
-      .digest('hex')
-      .slice(0, 32);
+    // SEC-C05: Generate a random origin verification secret, persisted in Secrets Manager.
+    // This secret is shared between CloudFront (custom origin header) and ECS (env var).
+    const originSecret = new secretsmanager.Secret(this, 'OriginVerifySecret', {
+      secretName: `nanoclawbot-${stage}-origin-verify`,
+      description: 'Shared secret for X-Origin-Verify header between CloudFront and ALB',
+      generateSecretString: {
+        excludePunctuation: true,
+        passwordLength: 32,
+      },
+    });
+    this.originVerifySecret = originSecret.secretValue.unsafeUnwrap();
 
     // ── Security Groups ─────────────────────────────────────────────────
     const albSg = new ec2.SecurityGroup(this, 'AlbSg', {
