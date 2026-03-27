@@ -175,7 +175,11 @@
     "skills": {
       "title": "Skills Library",
       "subtitle": "Enable skills from the platform library for this bot",
-      "noSkills": "No skills available. Ask your admin to add skills.",
+      "platformSkills": "Platform Skills",
+      "bundledSkills": "Bundled Skill Whitelist",
+      "whitelistEnabled": "Whitelist enabled — only checked skills allowed",
+      "whitelistDisabled": "Whitelist disabled — all bundled skills allowed",
+      "noSkills": "No platform skills available. Ask your admin to add skills.",
       "save": "Save",
       "saving": "Saving...",
       "saved": "Skills updated",

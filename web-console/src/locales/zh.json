@@ -175,7 +175,11 @@
     "skills": {
       "title": "技能库",
       "subtitle": "从平台技能库中为此机器人启用技能",
-      "noSkills": "暂无可用技能。请联系管理员添加技能。",
+      "platformSkills": "平台技能",
+      "bundledSkills": "内置技能白名单",
+      "whitelistEnabled": "白名单已启用 — 仅允许勾选的技能",
+      "whitelistDisabled": "白名单未启用 — 允许所有内置技能",
+      "noSkills": "暂无平台技能。请联系管理员添加技能。",
       "save": "保存",
       "saving": "保存中...",
       "saved": "技能已更新",
