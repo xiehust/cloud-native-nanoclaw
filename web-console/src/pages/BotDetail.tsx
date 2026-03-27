@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import {
   LayoutDashboard, Radio, MessageSquare, Clock, Brain,
   FolderOpen, Settings as SettingsIcon, Plus, Trash2, ExternalLink,
-  Play, Pause, Save, AlertTriangle, Shield,
+  Play, Pause, Save, AlertTriangle, Shield, Zap,
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import TabNav from '../components/TabNav';
@@ -17,6 +17,7 @@ import {
   Bot, ChannelConfig, Group, ScheduledTask,
   type ProviderPublic,
   type AvailableTools, type ToolWhitelistConfig,
+  type BotSkillEntry,
 } from '../lib/api';
 
 /* ── Tab icon map (labels are i18n'd inside BotDetail) ─────────────── */
@@ -29,6 +30,7 @@ const tabIcons: Record<string, React.ReactNode> = {
   memory: <Brain size={16} />,
   files: <FolderOpen size={16} />,
   tools: <Shield size={16} />,
+  skills: <Zap size={16} />,
   settings: <SettingsIcon size={16} />,
 };
 
@@ -923,6 +925,109 @@ function SettingsTab({
   );
 }
 
+/* ── Skills tab (bot owner) ───────────────────────────────────────── */
+
+function BotSkillsTab({ botId }: { botId: string }) {
+  const { t } = useTranslation();
+  const [skills, setSkills] = useState<BotSkillEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [status, setStatus] = useState<'saved' | 'error' | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    setLoading(true);
+    botsApi.listSkills(botId)
+      .then((res) => {
+        setSkills(res.skills);
+        setSelected(new Set(res.skills.filter((s) => s.enabled).map((s) => s.skillId)));
+      })
+      .catch((err) => console.error('Failed to load skills:', err))
+      .finally(() => setLoading(false));
+  }, [botId]);
+
+  function toggleSkill(skillId: string) {
+    setStatus(null);
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(skillId)) next.delete(skillId);
+      else next.add(skillId);
+      return next;
+    });
+  }
+
+  async function handleSave() {
+    setSaving(true);
+    setStatus(null);
+    try {
+      await botsApi.updateSkills(botId, Array.from(selected));
+      setStatus('saved');
+    } catch (err) {
+      console.error('Failed to update skills:', err);
+      setStatus('error');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (loading) return <div className="text-center py-12 text-slate-400">{t('common.loading')}</div>;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-lg font-semibold text-slate-900">{t('botDetail.skills.title')}</h2>
+          <p className="text-sm text-slate-500">{t('botDetail.skills.subtitle')}</p>
+        </div>
+        <div className="flex items-center gap-3">
+          {status === 'saved' && <span className="text-sm text-emerald-600 font-medium">{t('botDetail.skills.saved')}</span>}
+          {status === 'error' && <span className="text-sm text-red-600 font-medium">{t('botDetail.skills.error')}</span>}
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            className={clsx(
+              'inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-white transition-colors',
+              saving ? 'bg-accent-400 cursor-not-allowed' : 'bg-accent-600 hover:bg-accent-700',
+            )}
+          >
+            <Save size={16} />
+            {saving ? t('botDetail.skills.saving') : t('botDetail.skills.save')}
+          </button>
+        </div>
+      </div>
+
+      {skills.length === 0 ? (
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-8 text-center text-slate-500">
+          {t('botDetail.skills.noSkills')}
+        </div>
+      ) : (
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200 divide-y divide-slate-200">
+          {skills.map((skill) => (
+            <label key={skill.skillId} className="flex items-center gap-4 px-5 py-4 hover:bg-slate-50 cursor-pointer transition-colors">
+              <input
+                type="checkbox"
+                checked={selected.has(skill.skillId)}
+                onChange={() => toggleSkill(skill.skillId)}
+                className="h-4 w-4 rounded border-slate-300 text-accent-600 focus:ring-accent-500"
+              />
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium text-slate-900">{skill.name}</span>
+                  <span className="text-xs text-slate-400">v{skill.version}</span>
+                  <Badge variant="neutral">{skill.fileCount} {skill.fileCount === 1 ? 'file' : 'files'}</Badge>
+                </div>
+                {skill.description && (
+                  <p className="text-xs text-slate-500 mt-0.5 line-clamp-1">{skill.description}</p>
+                )}
+              </div>
+            </label>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ── Main component ────────────────────────────────────────────────── */
 
 export default function BotDetail() {
@@ -1074,6 +1179,9 @@ export default function BotDetail() {
         )}
         {activeTab === 'tools' && (
           <ToolsTab bot={bot} botId={botId!} loadData={loadData} />
+        )}
+        {activeTab === 'skills' && (
+          <BotSkillsTab botId={botId!} />
         )}
         {activeTab === 'settings' && (
           <SettingsTab bot={bot} botId={botId!} loadData={loadData} />

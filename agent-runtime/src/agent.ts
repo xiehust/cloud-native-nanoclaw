@@ -31,7 +31,7 @@ import {
 } from '@aws-sdk/client-secrets-manager';
 import type pino from 'pino';
 import type { InvocationPayload, InvocationResult, Attachment } from '@clawbot/shared';
-import { syncFromS3, syncToS3, clearSessionDirectory, syncMemoryOnlyFromS3, type SyncPaths } from './session.js';
+import { syncFromS3, syncToS3, clearSessionDirectory, syncMemoryOnlyFromS3, downloadSkills, type SyncPaths } from './session.js';
 import { buildAppendContent } from './system-prompt.js';
 import { getScopedClients } from './scoped-credentials.js';
 import { setBusy, setIdle } from './server.js';
@@ -169,6 +169,12 @@ async function _handleInvocation(
   // 2b. Download inbound attachments to /workspace/group/attachments/
   if (payload.attachments?.length) {
     await downloadAttachments(s3, SESSION_BUCKET, payload.attachments, logger);
+  }
+
+  // 2c. Download enabled skills to ~/.claude/skills/
+  if (payload.skills?.length) {
+    logger.info({ skillCount: payload.skills.length }, 'Downloading enabled skills');
+    await downloadSkills(s3, SESSION_BUCKET, payload.skills, logger);
   }
 
   // 3. Copy bot operating manual to ~/.claude/CLAUDE.md if not present (first run)

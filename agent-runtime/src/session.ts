@@ -13,7 +13,7 @@
 
 import { S3Client, GetObjectCommand, PutObjectCommand, DeleteObjectCommand, ListObjectsV2Command } from '@aws-sdk/client-s3';
 import { existsSync } from 'fs';
-import { mkdir, readdir, readFile, writeFile, stat, realpath } from 'fs/promises';
+import { mkdir, readdir, readFile, writeFile, stat, realpath, rm } from 'fs/promises';
 import { join, dirname, relative } from 'path';
 import type pino from 'pino';
 
@@ -78,6 +78,29 @@ export async function syncToS3(
   // 4. Upload learnings directory
   if (paths.learningsPrefix) {
     await uploadDirectory(s3, bucket, join(WORKSPACE_BASE, 'learnings'), paths.learningsPrefix, logger);
+  }
+}
+
+/**
+ * Download enabled skills from S3 to ~/.claude/skills/.
+ * Skills are platform-level (not user-scoped) but accessible via scoped S3 credentials
+ * thanks to the S3ReadSkills IAM policy.
+ */
+export async function downloadSkills(
+  s3: S3Client,
+  bucket: string,
+  skillIds: string[],
+  logger: pino.Logger,
+): Promise<void> {
+  const SKILLS_DIR = join(CLAUDE_DIR, 'skills');
+  // Clear stale skills from previous bot sessions to prevent bleed-through
+  await rm(SKILLS_DIR, { recursive: true, force: true });
+  await mkdir(SKILLS_DIR, { recursive: true });
+  for (const skillId of skillIds) {
+    const prefix = `skills/${skillId}/`;
+    const localDir = join(SKILLS_DIR, skillId);
+    logger.info({ skillId, prefix }, 'Downloading skill from S3');
+    await downloadDirectory(s3, bucket, prefix, localDir, logger);
   }
 }
 
