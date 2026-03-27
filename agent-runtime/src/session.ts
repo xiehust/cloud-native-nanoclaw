@@ -86,6 +86,12 @@ export async function syncToS3(
  * Skills are platform-level (not user-scoped) but accessible via scoped S3 credentials
  * thanks to the S3ReadSkills IAM policy.
  */
+/**
+ * Manifest file tracking which directories under ~/.claude/skills/ were
+ * downloaded from S3 (vs Docker-bundled). Used for targeted cleanup.
+ */
+const S3_SKILLS_MANIFEST = '.s3-managed.json';
+
 export async function downloadSkills(
   s3: S3Client,
   bucket: string,
@@ -93,15 +99,39 @@ export async function downloadSkills(
   logger: pino.Logger,
 ): Promise<void> {
   const SKILLS_DIR = join(CLAUDE_DIR, 'skills');
-  // Clear stale skills from previous bot sessions to prevent bleed-through
-  await rm(SKILLS_DIR, { recursive: true, force: true });
   await mkdir(SKILLS_DIR, { recursive: true });
+
+  // 1. Remove directories from previous S3 downloads (preserves Docker-bundled skills)
+  const manifestPath = join(SKILLS_DIR, S3_SKILLS_MANIFEST);
+  if (existsSync(manifestPath)) {
+    try {
+      const prev: string[] = JSON.parse(await readFile(manifestPath, 'utf-8'));
+      for (const dir of prev) {
+        await rm(join(SKILLS_DIR, dir), { recursive: true, force: true });
+      }
+    } catch { /* ignore corrupt manifest */ }
+  }
+
+  // 2. Snapshot existing dirs (these are all Docker-bundled after cleanup)
+  const beforeDirs = new Set(
+    (await readdir(SKILLS_DIR, { withFileTypes: true }))
+      .filter((e) => e.isDirectory())
+      .map((e) => e.name),
+  );
+
+  // 3. Download each skill directly into ~/.claude/skills/ (no ULID wrapper)
   for (const skillId of skillIds) {
     const prefix = `skills/${skillId}/`;
-    const localDir = join(SKILLS_DIR, skillId);
     logger.info({ skillId, prefix }, 'Downloading skill from S3');
-    await downloadDirectory(s3, bucket, prefix, localDir, logger);
+    await downloadDirectory(s3, bucket, prefix, SKILLS_DIR, logger);
   }
+
+  // 4. Diff to find newly added directories → write manifest for future cleanup
+  const afterDirs = (await readdir(SKILLS_DIR, { withFileTypes: true }))
+    .filter((e) => e.isDirectory())
+    .map((e) => e.name);
+  const newDirs = afterDirs.filter((d) => !beforeDirs.has(d));
+  await writeFile(manifestPath, JSON.stringify(newDirs), 'utf-8');
 }
 
 /**
