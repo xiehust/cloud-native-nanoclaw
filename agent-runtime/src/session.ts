@@ -13,7 +13,7 @@
 
 import { S3Client, GetObjectCommand, PutObjectCommand, DeleteObjectCommand, ListObjectsV2Command } from '@aws-sdk/client-s3';
 import { existsSync } from 'fs';
-import { mkdir, readdir, readFile, writeFile, stat, realpath, rm } from 'fs/promises';
+import { mkdir, readdir, readFile, writeFile, stat, realpath } from 'fs/promises';
 import { join, dirname, relative } from 'path';
 import type pino from 'pino';
 
@@ -83,55 +83,23 @@ export async function syncToS3(
 
 /**
  * Download enabled skills from S3 to ~/.claude/skills/.
- * Skills are platform-level (not user-scoped) but accessible via scoped S3 credentials
- * thanks to the S3ReadSkills IAM policy.
+ * Overlays onto existing directory — does NOT delete bundled or previously downloaded skills.
+ * Payload contains S3 prefix names (e.g., "email-manager"), not skill IDs.
  */
-/**
- * Manifest file tracking which directories under ~/.claude/skills/ were
- * downloaded from S3 (vs Docker-bundled). Used for targeted cleanup.
- */
-const S3_SKILLS_MANIFEST = '.s3-managed.json';
-
 export async function downloadSkills(
   s3: S3Client,
   bucket: string,
-  skillIds: string[],
+  skillPrefixes: string[],
   logger: pino.Logger,
 ): Promise<void> {
   const SKILLS_DIR = join(CLAUDE_DIR, 'skills');
   await mkdir(SKILLS_DIR, { recursive: true });
 
-  // 1. Remove directories from previous S3 downloads (preserves Docker-bundled skills)
-  const manifestPath = join(SKILLS_DIR, S3_SKILLS_MANIFEST);
-  if (existsSync(manifestPath)) {
-    try {
-      const prev: string[] = JSON.parse(await readFile(manifestPath, 'utf-8'));
-      for (const dir of prev) {
-        await rm(join(SKILLS_DIR, dir), { recursive: true, force: true });
-      }
-    } catch { /* ignore corrupt manifest */ }
+  for (const prefix of skillPrefixes) {
+    const s3Prefix = `skills/${prefix}/`;
+    logger.info({ prefix, s3Prefix }, 'Downloading skill from S3');
+    await downloadDirectory(s3, bucket, s3Prefix, join(SKILLS_DIR, prefix), logger);
   }
-
-  // 2. Snapshot existing dirs (these are all Docker-bundled after cleanup)
-  const beforeDirs = new Set(
-    (await readdir(SKILLS_DIR, { withFileTypes: true }))
-      .filter((e) => e.isDirectory())
-      .map((e) => e.name),
-  );
-
-  // 3. Download each skill directly into ~/.claude/skills/ (no ULID wrapper)
-  for (const skillId of skillIds) {
-    const prefix = `skills/${skillId}/`;
-    logger.info({ skillId, prefix }, 'Downloading skill from S3');
-    await downloadDirectory(s3, bucket, prefix, SKILLS_DIR, logger);
-  }
-
-  // 4. Diff to find newly added directories → write manifest for future cleanup
-  const afterDirs = (await readdir(SKILLS_DIR, { withFileTypes: true }))
-    .filter((e) => e.isDirectory())
-    .map((e) => e.name);
-  const newDirs = afterDirs.filter((d) => !beforeDirs.has(d));
-  await writeFile(manifestPath, JSON.stringify(newDirs), 'utf-8');
 }
 
 /**

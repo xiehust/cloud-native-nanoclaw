@@ -33,6 +33,7 @@ import {
   releaseAgentSlot,
   getChannelsByBot,
   getProvider,
+  getSkill,
 } from '../services/dynamo.js';
 import { getProviderApiKey, getProxyRules } from '../services/secrets.js';
 import { getCachedBot } from '../services/cached-lookups.js';
@@ -366,8 +367,14 @@ async function dispatchMessage(
       ...(forceNewSession && { forceNewSession: true }),
       ...(proxyRules.length > 0 && { proxyRules }),
       ...(bot.toolWhitelist && { toolWhitelist: bot.toolWhitelist }),
-      ...(bot.skills?.length && { skills: bot.skills }),
     };
+
+    // Resolve skill IDs → S3 prefix names for runtime download
+    if (bot.skills?.length) {
+      const resolved = await Promise.all(bot.skills.map((id) => getSkill(id)));
+      const prefixes = resolved.filter((s) => s?.status === 'active').map((s) => s!.s3Prefix);
+      if (prefixes.length > 0) invocationPayload.skills = prefixes;
+    }
 
     logger.info(
       { botId: payload.botId, groupJid: payload.groupJid, proxyRuleCount: proxyRules.length },
@@ -539,8 +546,14 @@ async function dispatchTask(
       proxyRules: proxyRulesTask,
     }),
     ...(bot.toolWhitelist && { toolWhitelist: bot.toolWhitelist }),
-    ...(bot.skills?.length && { skills: bot.skills }),
   };
+
+  // Resolve skill IDs → S3 prefix names for runtime download
+  if (bot.skills?.length) {
+    const resolved = await Promise.all(bot.skills.map((id) => getSkill(id)));
+    const prefixes = resolved.filter((s) => s?.status === 'active').map((s) => s!.s3Prefix);
+    if (prefixes.length > 0) invocationPayload.skills = prefixes;
+  }
 
   const result = await invokeAgent(invocationPayload, logger);
 

@@ -58,36 +58,50 @@ function contentType(filePath: string): string {
 }
 
 /**
- * Upload all files from a local directory to S3 under skills/{skillId}/
+ * Detect the S3 prefix (top-level directory name) from extracted files.
+ * If all files share a common top-level directory (e.g., "email-manager/..."),
+ * use that. Otherwise, use a slugified version of the skill name.
+ */
+function detectS3Prefix(allFiles: string[], skillName: string): string {
+  const topDirs = new Set(allFiles.map((f) => f.split('/')[0]));
+  // If all files are under a single directory, use that directory name
+  if (topDirs.size === 1) {
+    const dir = [...topDirs][0];
+    // Only use it if files actually have subdirectory structure (not root files)
+    if (allFiles.every((f) => f.includes('/'))) {
+      return dir;
+    }
+  }
+  // Fallback: slugify the skill name
+  return skillName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+}
+
+/**
+ * Upload all files from a local directory to S3 under skills/{s3Prefix}/
+ * Files are stored flat under the prefix (no ULID in the path).
  */
 async function uploadSkillFiles(
-  skillId: string,
+  s3Prefix: string,
   sourceDir: string,
   allFiles: string[],
+  hasWrapperDir: boolean,
 ): Promise<void> {
   for (const file of allFiles) {
+    // If files have a wrapper dir that matches s3Prefix, strip it to avoid double nesting
+    // e.g., "email-manager/SKILL.md" → upload as "skills/email-manager/SKILL.md"
+    const s3Key = hasWrapperDir
+      ? `skills/${file}`
+      : `skills/${s3Prefix}/${file}`;
     const content = await readFile(join(sourceDir, file));
     await s3.send(
       new PutObjectCommand({
         Bucket: config.s3Bucket,
-        Key: `skills/${skillId}/${file}`,
+        Key: s3Key,
         Body: content,
         ContentType: contentType(file),
       }),
     );
   }
-
-  // Upload metadata.json for agent-runtime convenience
-  const mdFiles = allFiles.filter((f) => f.endsWith('.md'));
-  const metadata = { skillId, files: allFiles, mdFiles };
-  await s3.send(
-    new PutObjectCommand({
-      Bucket: config.s3Bucket,
-      Key: `skills/${skillId}/metadata.json`,
-      Body: JSON.stringify(metadata),
-      ContentType: 'application/json',
-    }),
-  );
 }
 
 /**
@@ -115,8 +129,10 @@ export async function installFromZip(
       throw new Error('No .md files found in zip archive');
     }
 
+    const s3Prefix = detectS3Prefix(allFiles, name);
+    const hasWrapperDir = allFiles.every((f) => f.startsWith(s3Prefix + '/'));
     const skillId = ulid();
-    await uploadSkillFiles(skillId, tmpDir, allFiles);
+    await uploadSkillFiles(s3Prefix, tmpDir, allFiles, hasWrapperDir);
 
     const now = new Date().toISOString();
     const skill: Skill = {
@@ -125,6 +141,7 @@ export async function installFromZip(
       description,
       version,
       source: 'zip',
+      s3Prefix,
       fileCount: allFiles.length,
       files: allFiles,
       status: 'active',
@@ -170,8 +187,10 @@ export async function installFromGit(
       throw new Error('No .md files found in git repository' + (subPath ? ` at path "${subPath}"` : ''));
     }
 
+    const s3Prefix = detectS3Prefix(allFiles, name);
+    const hasWrapperDir = allFiles.every((f) => f.startsWith(s3Prefix + '/'));
     const skillId = ulid();
-    await uploadSkillFiles(skillId, resolved, allFiles);
+    await uploadSkillFiles(s3Prefix, resolved, allFiles, hasWrapperDir);
 
     const now = new Date().toISOString();
     const skill: Skill = {
@@ -181,6 +200,7 @@ export async function installFromGit(
       version,
       source: 'git',
       sourceUrl: url,
+      s3Prefix,
       fileCount: allFiles.length,
       files: allFiles,
       status: 'active',
@@ -199,8 +219,8 @@ export async function installFromGit(
 /**
  * Delete all S3 objects for a skill.
  */
-export async function deleteSkillFiles(skillId: string): Promise<void> {
-  const prefix = `skills/${skillId}/`;
+export async function deleteSkillFiles(s3Prefix: string): Promise<void> {
+  const prefix = `skills/${s3Prefix}/`;
 
   let continuationToken: string | undefined;
   do {

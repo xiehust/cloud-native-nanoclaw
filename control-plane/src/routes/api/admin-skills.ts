@@ -134,7 +134,7 @@ export const adminSkillsRoutes: FastifyPluginAsync = async (app) => {
         return reply.status(404).send({ error: 'Skill not found' });
       }
 
-      await deleteSkillFiles(request.params.skillId);
+      await deleteSkillFiles(existing.s3Prefix);
       await deleteSkillRecord(request.params.skillId);
       // Note: bots with this skillId in their skills[] array retain the stale reference.
       // The agent-runtime's downloadDirectory gracefully handles missing S3 prefixes (no-op).

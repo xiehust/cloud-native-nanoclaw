@@ -397,8 +397,9 @@ export interface Skill {
   version: string;
   source: 'zip' | 'git';
   sourceUrl?: string;
+  s3Prefix: string;      // Top-level directory name in S3 (e.g., "email-manager")
   fileCount: number;
-  files: string[];       // Relative paths of .md files in the skill package
+  files: string[];       // Relative paths of files in the skill package
   status: 'active' | 'disabled';
   createdAt: string;
   updatedAt: string;
