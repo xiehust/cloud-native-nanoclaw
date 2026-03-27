@@ -35,8 +35,8 @@ async function findAllFiles(dir: string, base = ''): Promise<string[]> {
       if (entry.name.startsWith('.') || SKIP_DIRS.has(entry.name)) continue;
       files.push(...await findAllFiles(join(dir, entry.name), rel));
     } else {
-      // Skip macOS resource fork files (._*)
-      if (entry.name.startsWith('._')) continue;
+      // Skip macOS artifacts (._*, .DS_Store, Thumbs.db)
+      if (entry.name.startsWith('._') || entry.name === '.DS_Store' || entry.name === 'Thumbs.db') continue;
       files.push(rel);
     }
   }
