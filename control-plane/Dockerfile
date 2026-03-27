@@ -33,7 +33,7 @@ RUN npm run build --workspace=@clawbot/control-plane
 # ── Stage 2: Runner ──────────────────────────────────────────────────────────
 FROM --platform=linux/arm64 node:22-slim AS runner
 
-RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
