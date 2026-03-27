@@ -18,7 +18,7 @@
  *   - Session resumption via sessionId
  */
 
-import fs, { rmSync, mkdirSync } from 'fs';
+import fs, { rmSync, mkdirSync, readdirSync } from 'fs';
 import { writeFile, mkdir } from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -46,10 +46,23 @@ const secretsManager = new SecretsManagerClient({});
 let currentSessionKey: string | undefined;
 
 async function cleanLocalWorkspace(): Promise<void> {
-  for (const dir of ['/workspace/group', '/workspace/learnings', '/workspace/reference', '/home/node/.claude']) {
+  // Clean /home/node/.claude EXCEPT skills/ — bundled skills are baked into the Docker
+  // image and cannot be recovered after deletion. Clean individual subdirs instead.
+  for (const dir of ['/workspace/group', '/workspace/learnings', '/workspace/reference']) {
     try { rmSync(dir, { recursive: true, force: true }); } catch { /* ignore */ }
     try { mkdirSync(dir, { recursive: true }); } catch { /* ignore */ }
   }
+  // Selectively clean ~/.claude contents, preserving skills/
+  const claudeDir = '/home/node/.claude';
+  try {
+    const entries = readdirSync(claudeDir);
+    for (const entry of entries) {
+      if (entry === 'skills') continue; // Preserve bundled + S3-managed skills
+      const fullPath = path.join(claudeDir, entry);
+      try { rmSync(fullPath, { recursive: true, force: true }); } catch { /* ignore */ }
+    }
+  } catch { /* dir may not exist yet */ }
+  try { mkdirSync(claudeDir, { recursive: true }); } catch { /* ignore */ }
 }
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
