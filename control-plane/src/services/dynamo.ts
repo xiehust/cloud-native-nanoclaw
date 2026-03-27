@@ -1124,6 +1124,19 @@ export async function createSkill(skill: Skill): Promise<void> {
   );
 }
 
+/** Check if any existing skill uses the given S3 prefix. */
+export async function getSkillByPrefix(s3Prefix: string): Promise<Skill | null> {
+  const result = await client.send(
+    new ScanCommand({
+      TableName: config.tables.skills,
+      FilterExpression: 's3Prefix = :prefix',
+      ExpressionAttributeValues: { ':prefix': s3Prefix },
+      Limit: 1,
+    }),
+  );
+  return (result.Items?.[0] as Skill) ?? null;
+}
+
 export async function getSkill(skillId: string): Promise<Skill | null> {
   skillIdSchema.parse(skillId);
   const result = await client.send(

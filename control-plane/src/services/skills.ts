@@ -12,7 +12,7 @@ import { tmpdir } from 'os';
 import AdmZip from 'adm-zip';
 import { ulid } from 'ulid';
 import { config } from '../config.js';
-import { createSkill } from './dynamo.js';
+import { createSkill, getSkillByPrefix } from './dynamo.js';
 import type { Skill } from '@clawbot/shared';
 
 const execFileAsync = promisify(execFile);
@@ -130,6 +130,11 @@ export async function installFromZip(
     }
 
     const s3Prefix = detectS3Prefix(allFiles, name);
+    const existing = await getSkillByPrefix(s3Prefix);
+    if (existing) {
+      throw new Error(`S3 prefix "${s3Prefix}" is already used by skill "${existing.name}" (${existing.skillId}). Use a different directory name or delete the existing skill first.`);
+    }
+
     const hasWrapperDir = allFiles.every((f) => f.startsWith(s3Prefix + '/'));
     const skillId = ulid();
     await uploadSkillFiles(s3Prefix, tmpDir, allFiles, hasWrapperDir);
@@ -188,6 +193,11 @@ export async function installFromGit(
     }
 
     const s3Prefix = detectS3Prefix(allFiles, name);
+    const existing = await getSkillByPrefix(s3Prefix);
+    if (existing) {
+      throw new Error(`S3 prefix "${s3Prefix}" is already used by skill "${existing.name}" (${existing.skillId}). Use a different directory name or delete the existing skill first.`);
+    }
+
     const hasWrapperDir = allFiles.every((f) => f.startsWith(s3Prefix + '/'));
     const skillId = ulid();
     await uploadSkillFiles(s3Prefix, resolved, allFiles, hasWrapperDir);

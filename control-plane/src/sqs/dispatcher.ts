@@ -37,6 +37,7 @@ import {
 } from '../services/dynamo.js';
 import { getProviderApiKey, getProxyRules } from '../services/secrets.js';
 import { getCachedBot } from '../services/cached-lookups.js';
+import type { Bot } from '@clawbot/shared';
 import { getRegistry } from '../adapters/registry.js';
 import type { ReplyContext, ReplyOptions } from '@clawbot/shared/channel-adapter';
 import type { Logger } from 'pino';
@@ -369,12 +370,8 @@ async function dispatchMessage(
       ...(bot.toolWhitelist && { toolWhitelist: bot.toolWhitelist }),
     };
 
-    // Resolve skill IDs → S3 prefix names for runtime download
-    if (bot.skills?.length) {
-      const resolved = await Promise.all(bot.skills.map((id) => getSkill(id)));
-      const prefixes = resolved.filter((s) => s?.status === 'active').map((s) => s!.s3Prefix);
-      if (prefixes.length > 0) invocationPayload.skills = prefixes;
-    }
+    const skillPrefixes = await resolveSkillPrefixes(bot);
+    if (skillPrefixes.length > 0) invocationPayload.skills = skillPrefixes;
 
     logger.info(
       { botId: payload.botId, groupJid: payload.groupJid, proxyRuleCount: proxyRules.length },
@@ -548,12 +545,8 @@ async function dispatchTask(
     ...(bot.toolWhitelist && { toolWhitelist: bot.toolWhitelist }),
   };
 
-  // Resolve skill IDs → S3 prefix names for runtime download
-  if (bot.skills?.length) {
-    const resolved = await Promise.all(bot.skills.map((id) => getSkill(id)));
-    const prefixes = resolved.filter((s) => s?.status === 'active').map((s) => s!.s3Prefix);
-    if (prefixes.length > 0) invocationPayload.skills = prefixes;
-  }
+  const taskSkillPrefixes = await resolveSkillPrefixes(bot);
+  if (taskSkillPrefixes.length > 0) invocationPayload.skills = taskSkillPrefixes;
 
   const result = await invokeAgent(invocationPayload, logger);
 
@@ -602,6 +595,15 @@ async function dispatchTask(
       lastModelProvider: effectiveProvider,
     });
   }
+}
+
+// ── Skill Resolution ─────────────────────────────────────────────────────────
+
+/** Resolve bot skill IDs to S3 prefix names for runtime download. */
+async function resolveSkillPrefixes(bot: Bot): Promise<string[]> {
+  if (!bot.skills?.length) return [];
+  const resolved = await Promise.all(bot.skills.map((id) => getSkill(id)));
+  return resolved.filter((s) => s?.status === 'active').map((s) => s!.s3Prefix);
 }
 
 // ── Agent Invocation (AgentCore Runtime via AWS SDK) ─────────────────────────
