@@ -1124,17 +1124,30 @@ export async function createSkill(skill: Skill): Promise<void> {
   );
 }
 
-/** Check if any existing skill uses the given S3 prefix. */
-export async function getSkillByPrefix(s3Prefix: string): Promise<Skill | null> {
-  const result = await client.send(
-    new ScanCommand({
-      TableName: config.tables.skills,
-      FilterExpression: 's3Prefix = :prefix',
-      ExpressionAttributeValues: { ':prefix': s3Prefix },
-      Limit: 1,
-    }),
-  );
-  return (result.Items?.[0] as Skill) ?? null;
+/** Check if any existing skill uses the given S3 prefix in its s3Prefixes array. */
+export async function getSkillByPrefix(prefix: string): Promise<Skill | null> {
+  let lastKey: Record<string, unknown> | undefined;
+  do {
+    const result = await client.send(
+      new ScanCommand({
+        TableName: config.tables.skills,
+        FilterExpression: 'contains(s3Prefixes, :prefix)',
+        ExpressionAttributeValues: { ':prefix': prefix },
+        ExclusiveStartKey: lastKey,
+      }),
+    );
+    if (result.Items?.length) return result.Items[0] as Skill;
+    lastKey = result.LastEvaluatedKey;
+  } while (lastKey);
+  return null;
+}
+
+/** Backward compat: old records have s3Prefix (string), new have s3Prefixes (string[]). */
+function migrateSkillRecord(skill: Skill & { s3Prefix?: string }): Skill {
+  if (!skill.s3Prefixes && skill.s3Prefix) {
+    skill.s3Prefixes = [skill.s3Prefix];
+  }
+  return skill;
 }
 
 export async function getSkill(skillId: string): Promise<Skill | null> {
@@ -1145,7 +1158,8 @@ export async function getSkill(skillId: string): Promise<Skill | null> {
       Key: { skillId },
     }),
   );
-  return (result.Item as Skill) ?? null;
+  if (!result.Item) return null;
+  return migrateSkillRecord(result.Item as Skill & { s3Prefix?: string });
 }
 
 export async function listSkills(status?: string): Promise<Skill[]> {

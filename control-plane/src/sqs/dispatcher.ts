@@ -599,11 +599,14 @@ async function dispatchTask(
 
 // ── Skill Resolution ─────────────────────────────────────────────────────────
 
-/** Resolve bot skill IDs to S3 prefix names for runtime download. */
+/** Resolve bot skill IDs to flat S3 prefix names for runtime download. */
 async function resolveSkillPrefixes(bot: Bot): Promise<string[]> {
   if (!bot.skills?.length) return [];
   const resolved = await Promise.all(bot.skills.map((id) => getSkill(id)));
-  return resolved.filter((s) => s?.status === 'active').map((s) => s!.s3Prefix);
+  // Flatten: each skill record can have multiple s3Prefixes (e.g., plugin with 2 skills)
+  return resolved
+    .filter((s) => s?.status === 'active')
+    .flatMap((s) => s!.s3Prefixes);
 }
 
 // ── Agent Invocation (AgentCore Runtime via AWS SDK) ─────────────────────────
