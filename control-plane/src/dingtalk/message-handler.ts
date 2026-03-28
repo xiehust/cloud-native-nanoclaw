@@ -42,7 +42,7 @@ export interface DingTalkMessageData {
   sessionWebhook: string;       // webhook URL for quick reply
   robotCode: string;            // robot app key
   text?: { content: string };   // message text content (present for text messages)
-  content?: { richText?: Array<Array<{ tag: string; text?: string; downloadCode?: string; type?: string }>> };
+  content?: { richText?: Array<{ downloadCode?: string; pictureDownloadCode?: string; tag?: string; text?: string; type?: string }> };
   msgtype: 'text' | 'richText' | 'picture' | 'audio' | 'video' | 'file';
   isInAtList?: boolean;         // whether bot was @mentioned
   atUsers?: Array<{ dingtalkId: string; staffId?: string }>;
@@ -151,27 +151,25 @@ export async function handleDingTalkMessage(
       break;
 
     case 'richText': {
-      const parts: string[] = [];
+      // DingTalk richText: text is in data.text.content, images are in data.content.richText[]
+      // richText is a FLAT array of objects with downloadCode/pictureDownloadCode (no tag/text fields)
+      rawContent = data.text?.content || '';
+
       const richText = data.content?.richText;
       if (Array.isArray(richText)) {
-        let imgIdx = 0;
-        for (const paragraph of richText) {
-          if (Array.isArray(paragraph)) {
-            for (const seg of paragraph) {
-              if (seg.tag === 'text' && seg.text) {
-                parts.push(seg.text);
-              } else if ((seg.tag === 'img' || seg.tag === 'picture')) {
-                if (seg.downloadCode) {
-                  pendingMedia.push({ downloadCode: seg.downloadCode, fallbackName: `richtext_image_${imgIdx}.png`, fallbackMime: 'image/png' });
-                }
-                imgIdx++;
-                parts.push('[image]');
-              }
-            }
+        for (let i = 0; i < richText.length; i++) {
+          const item = richText[i];
+          const dlCode = item.downloadCode || item.pictureDownloadCode || '';
+          if (dlCode) {
+            pendingMedia.push({ downloadCode: dlCode, fallbackName: `richtext_image_${i}.png`, fallbackMime: 'image/png' });
           }
         }
+        if (pendingMedia.length > 0) {
+          rawContent += rawContent ? ' [+image]' : '[Image attached]';
+        }
       }
-      rawContent = parts.length > 0 ? parts.join('') : '[Rich text message — no text extracted]';
+
+      if (!rawContent) rawContent = '[Rich text message — no text extracted]';
       logger.info({ botId, msgtype: 'richText', extractedLength: rawContent.length, mediaCount: pendingMedia.length }, 'DingTalk richText message parsed');
       break;
     }
