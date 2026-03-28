@@ -131,17 +131,40 @@ export async function handleDingTalkMessage(
   data: DingTalkMessageData,
   logger: pino.Logger,
 ): Promise<void> {
-  // Only handle text messages for now; other types (image, file, richText)
-  // can be added later following the feishu attachment pattern.
-  if (data.msgtype !== 'text') {
-    logger.debug(
-      { botId, msgtype: data.msgtype },
-      'Skipping non-text DingTalk message',
-    );
-    return;
+  // Parse content based on message type (Phase 1: text extraction only,
+  // media download deferred to Phase 2 after downloadCode verification)
+  let rawContent = '';
+
+  switch (data.msgtype) {
+    case 'text':
+      rawContent = data.text?.content || '';
+      break;
+    case 'richText':
+      // Extract plain text from richText structure
+      rawContent = '[Rich text message received]';
+      logger.info({ botId, msgtype: 'richText' }, 'DingTalk richText message — text placeholder used');
+      break;
+    case 'picture':
+      rawContent = '[Image attachment received]';
+      logger.info({ botId, msgtype: 'picture' }, 'DingTalk image message — placeholder used');
+      break;
+    case 'file':
+      rawContent = '[File attachment received]';
+      logger.info({ botId, msgtype: 'file' }, 'DingTalk file message — placeholder used');
+      break;
+    case 'audio':
+      rawContent = '[Audio message received]';
+      logger.info({ botId, msgtype: 'audio' }, 'DingTalk audio message — placeholder used');
+      break;
+    case 'video':
+      rawContent = '[Video message received]';
+      logger.info({ botId, msgtype: 'video' }, 'DingTalk video message — placeholder used');
+      break;
+    default:
+      logger.debug({ botId, msgtype: data.msgtype }, 'Skipping unknown DingTalk message type');
+      return;
   }
 
-  const rawContent = data.text?.content || '';
   if (!rawContent.trim()) {
     logger.debug({ botId }, 'Skipping empty DingTalk message');
     return;

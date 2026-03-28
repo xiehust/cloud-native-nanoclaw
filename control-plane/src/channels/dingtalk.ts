@@ -221,3 +221,172 @@ export async function replyGroupMarkdownMessage(
     );
   }
 }
+
+// ── Old API Token (required for media upload) ──────────────────────────────
+
+const oldTokenCache = new Map<string, CachedToken>();
+
+/**
+ * Get an old-style access_token via oapi.dingtalk.com/gettoken.
+ * Required for media upload which is only available on the old API.
+ */
+async function getOldAccessToken(appKey: string, appSecret: string): Promise<string> {
+  const cached = oldTokenCache.get(appKey);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.token;
+  }
+
+  const url = `https://oapi.dingtalk.com/gettoken?appkey=${encodeURIComponent(appKey)}&appsecret=${encodeURIComponent(appSecret)}`;
+  const resp = await fetch(url);
+
+  if (!resp.ok) {
+    const body = await resp.text();
+    throw new Error(`DingTalk getOldAccessToken failed: ${resp.status} — ${body}`);
+  }
+
+  const data = (await resp.json()) as {
+    errcode?: number;
+    errmsg?: string;
+    access_token?: string;
+    expires_in?: number;
+  };
+  if (data.errcode && data.errcode !== 0) {
+    throw new Error(`DingTalk getOldAccessToken error: ${data.errcode} ${data.errmsg}`);
+  }
+  if (!data.access_token) {
+    throw new Error('DingTalk getOldAccessToken: no access_token in response');
+  }
+
+  const expireSec = data.expires_in ?? 7200;
+  oldTokenCache.set(appKey, {
+    token: data.access_token,
+    expiresAt: Date.now() + expireSec * 1000 - TOKEN_SAFETY_MARGIN_MS,
+  });
+
+  return data.access_token;
+}
+
+// ── Media Upload ────────────────────────────────────────────────────────────
+
+/**
+ * Upload a file to DingTalk and receive a media_id for later sending.
+ * Uses the old API: POST https://oapi.dingtalk.com/media/upload
+ * (The v1.0 /robot/messageFiles/upload endpoint does not exist.)
+ *
+ * @param mediaType - 'image' | 'file' | 'voice' | 'video'
+ * @returns media_id string
+ */
+export async function uploadMedia(
+  clientId: string,
+  clientSecret: string,
+  file: Buffer,
+  fileName: string,
+  mediaType: 'image' | 'file' | 'audio' | 'video',
+): Promise<string> {
+  // Old API uses 'voice' instead of 'audio'
+  const oldMediaType = mediaType === 'audio' ? 'voice' : mediaType;
+
+  // DingTalk file size limits (same as Feishu)
+  const MAX_FILE_SIZE = 30 * 1024 * 1024; // 30 MB
+  const MAX_IMAGE_SIZE = 10 * 1024 * 1024; // 10 MB
+
+  const sizeLimit = mediaType === 'image' ? MAX_IMAGE_SIZE : MAX_FILE_SIZE;
+  if (file.length > sizeLimit) {
+    throw new Error(
+      `DingTalk uploadMedia: file too large (${(file.length / 1024 / 1024).toFixed(1)} MB, max ${sizeLimit / 1024 / 1024} MB)`,
+    );
+  }
+
+  // Old oapi endpoint requires old-style access_token
+  const oldToken = await getOldAccessToken(clientId, clientSecret);
+
+  const url = `https://oapi.dingtalk.com/media/upload?access_token=${encodeURIComponent(oldToken)}&type=${oldMediaType}`;
+
+  const form = new FormData();
+  form.append('media', new Blob([file]), fileName);
+
+  const resp = await fetch(url, {
+    method: 'POST',
+    body: form,
+  });
+
+  if (!resp.ok) {
+    const body = await resp.text();
+    throw new Error(
+      `DingTalk uploadMedia failed: ${resp.status} ${resp.statusText} — ${body}`,
+    );
+  }
+
+  const data = (await resp.json()) as {
+    errcode?: number;
+    errmsg?: string;
+    media_id?: string;
+    type?: string;
+  };
+
+  if (data.errcode && data.errcode !== 0) {
+    throw new Error(`DingTalk uploadMedia errcode ${data.errcode}: ${data.errmsg}`);
+  }
+
+  if (!data.media_id) {
+    throw new Error('DingTalk uploadMedia error: no media_id in response');
+  }
+
+  return data.media_id;
+}
+
+/**
+ * Send a media message (file, image, audio, video) using a previously uploaded mediaId.
+ * Routes to oToMessages/batchSend (DM) or groupMessages/send (group) based on target.
+ */
+export async function sendMediaMessage(
+  accessToken: string,
+  target: { userIds?: string[]; openConversationId?: string },
+  mediaId: string,
+  msgKey: 'sampleFile' | 'sampleImageMsg' | 'sampleAudio' | 'sampleVideo',
+  robotCode: string,
+  fileName?: string,
+): Promise<void> {
+  // Build msgParam based on msgKey type
+  let msgParam: string;
+  if (msgKey === 'sampleImageMsg') {
+    msgParam = JSON.stringify({ photoURL: mediaId });
+  } else if (msgKey === 'sampleFile') {
+    // sampleFile requires fileName to display correctly (otherwise shows #fileName#)
+    msgParam = JSON.stringify({ mediaId, fileName: fileName || 'file', fileType: fileName?.split('.').pop() || 'file' });
+  } else {
+    // sampleAudio / sampleVideo
+    msgParam = JSON.stringify({ mediaId });
+  }
+
+  let url: string;
+  let body: Record<string, unknown>;
+
+  if (target.userIds) {
+    // DM: oToMessages/batchSend
+    url = `${DINGTALK_API}/v1.0/robot/oToMessages/batchSend`;
+    body = { robotCode, userIds: target.userIds, msgParam, msgKey };
+  } else if (target.openConversationId) {
+    // Group: groupMessages/send
+    url = `${DINGTALK_API}/v1.0/robot/groupMessages/send`;
+    body = { robotCode, openConversationId: target.openConversationId, msgParam, msgKey };
+  } else {
+    throw new Error('sendMediaMessage requires either userIds or openConversationId');
+  }
+
+  const resp = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'x-acs-dingtalk-access-token': accessToken,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!resp.ok) {
+    const respBody = await resp.text();
+    throw new Error(
+      `DingTalk sendMediaMessage failed: ${resp.status} ${resp.statusText} — ${respBody}`,
+    );
+  }
+}
