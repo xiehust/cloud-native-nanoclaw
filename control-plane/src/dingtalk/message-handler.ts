@@ -166,7 +166,7 @@ export async function handleDingTalkMessage(
           const item = richText[i];
           const dlCode = item.downloadCode || item.pictureDownloadCode || '';
           if (dlCode) {
-            pendingMedia.push({ downloadCode: dlCode, fallbackName: `richtext_image_${i}.png`, fallbackMime: 'image/png' });
+            pendingMedia.push({ downloadCode: dlCode, fallbackName: `richtext_image_${i}.jpg`, fallbackMime: 'image/jpeg' });
           }
         }
         if (pendingMedia.length > 0) {

@@ -701,5 +701,6 @@ async function sendChannelReply(
       { err, botId, groupJid, channelType },
       'Failed to send channel reply',
     );
+    // TODO: Track delivery failure in DynamoDB (markReplyFailed) for Web Console visibility
   }
 }

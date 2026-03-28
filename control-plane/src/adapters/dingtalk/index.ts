@@ -22,7 +22,6 @@ import {
 import {
   type DingTalkGatewayManager,
   initDingTalkGatewayManager,
-  getDingTalkGatewayManager,
 } from '../../dingtalk/gateway-manager.js';
 import { getChannelsByBot, getRecentMessages } from '../../services/dynamo.js';
 import { getChannelCredentials } from '../../services/cached-lookups.js';
@@ -401,6 +400,38 @@ export class DingTalkAdapter extends BaseChannelAdapter {
     return undefined;
   }
 
+  // ── Credential Loading ─────────────────────────────────────────────────
+
+  /**
+   * Load DingTalk credentials and access token for a bot.
+   * Shared by sendReply and sendFile to avoid duplication.
+   */
+  private async loadCredentials(botId: string): Promise<{
+    token: string;
+    robotCode: string;
+    clientId: string;
+    clientSecret: string;
+  } | null> {
+    const channels = await getChannelsByBot(botId);
+    const channel = channels.find((ch) => ch.channelType === 'dingtalk');
+    if (!channel) {
+      this.logger.warn({ botId }, 'No DingTalk channel configured for bot');
+      return null;
+    }
+
+    const creds = await getChannelCredentials(channel.credentialSecretArn);
+    const clientId = creds.clientId;
+    const clientSecret = creds.clientSecret;
+
+    if (!clientId || !clientSecret) {
+      this.logger.error({ botId }, 'Missing clientId or clientSecret in DingTalk credentials');
+      return null;
+    }
+
+    const token = await getAccessToken(clientId, clientSecret);
+    return { token, robotCode: clientId, clientId, clientSecret };
+  }
+
   // ── Send Reply ──────────────────────────────────────────────────────────
 
   async sendReply(
@@ -409,33 +440,9 @@ export class DingTalkAdapter extends BaseChannelAdapter {
     _opts?: ReplyOptions,
   ): Promise<void> {
     try {
-      // Load channel config for this bot
-      const channels = await getChannelsByBot(ctx.botId);
-      const channel = channels.find((ch) => ch.channelType === 'dingtalk');
-      if (!channel) {
-        this.logger.warn(
-          { botId: ctx.botId },
-          'No DingTalk channel configured for bot',
-        );
-        return;
-      }
-
-      // Load credentials from Secrets Manager (cached)
-      const creds = await getChannelCredentials(channel.credentialSecretArn);
-      const clientId = creds.clientId;
-      const clientSecret = creds.clientSecret;
-
-      if (!clientId || !clientSecret) {
-        this.logger.error(
-          { botId: ctx.botId },
-          'Missing clientId or clientSecret in DingTalk credentials',
-        );
-        return;
-      }
-
-      // Get access token
-      const token = await getAccessToken(clientId, clientSecret);
-      const robotCode = clientId; // robotCode === clientId in DingTalk
+      const cred = await this.loadCredentials(ctx.botId);
+      if (!cred) return;
+      const { token, robotCode } = cred;
 
       // Determine conversation ID and message type
       const conversationId =
@@ -517,25 +524,9 @@ export class DingTalkAdapter extends BaseChannelAdapter {
     caption?: string,
   ): Promise<void> {
     try {
-      // Load channel config for this bot
-      const channels = await getChannelsByBot(ctx.botId);
-      const channel = channels.find((ch) => ch.channelType === 'dingtalk');
-      if (!channel) {
-        this.logger.warn({ botId: ctx.botId }, 'No DingTalk channel configured for bot (sendFile)');
-        return;
-      }
-
-      const creds = await getChannelCredentials(channel.credentialSecretArn);
-      const clientId = creds.clientId;
-      const clientSecret = creds.clientSecret;
-
-      if (!clientId || !clientSecret) {
-        this.logger.error({ botId: ctx.botId }, 'Missing DingTalk credentials for sendFile');
-        return;
-      }
-
-      const token = await getAccessToken(clientId, clientSecret);
-      const robotCode = clientId;
+      const cred = await this.loadCredentials(ctx.botId);
+      if (!cred) return;
+      const { token, robotCode, clientId, clientSecret } = cred;
 
       // Determine media type from MIME
       const mediaType: 'image' | 'file' | 'audio' | 'video' =

@@ -1,7 +1,7 @@
 # DingTalk 集成修复与增强设计
 
 **日期**: 2026-03-27
-**状态**: Draft
+**状态**: Implemented
 **影响范围**: control-plane (adapters/dingtalk, channels/dingtalk, dingtalk/)
 
 ## 背景
@@ -227,18 +227,19 @@ switch (data.msgtype) {
     // DingTalk Stream 消息中包含 downloadCode
     // 通过 POST /v1.0/robot/messageFiles/download 下载
     // 存储到 S3: {userId}/{botId}/attachments/{messageId}/{filename}
+    // 完整下载流水线已实现（Phase 2 complete）
     content = `[${data.msgtype} attachment]`;
     break;
 }
 ```
 
-#### 入站媒体分两阶段实现
+#### 入站媒体实现状态
 
-DingTalk 的媒体下载 API (`/v1.0/robot/messageFiles/download`) 需要 `downloadCode` 和 `robotCode`。Stream 消息的 data 中是否包含 `downloadCode` 需要实际测试验证。
+DingTalk 的媒体下载 API (`/v1.0/robot/messageFiles/download`) 需要 `downloadCode` 和 `robotCode`。
 
-**Phase 1（本次）**：识别非 text 消息类型，生成文本占位符（如 `[image attachment]`、`[file: report.pdf]`），让 Agent 至少知道用户发了什么类型的内容。不做实际下载。
+**Phase 1**：识别非 text 消息类型，生成文本占位符（如 `[image attachment]`、`[file: report.pdf]`），让 Agent 至少知道用户发了什么类型的内容。已完成。
 
-**Phase 2（验证 downloadCode 后）**：参照飞书的附件处理模式（`feishu/message-handler.ts:262-306`），实现：下载媒体 → `storeFromBuffer()` 存 S3 → 在 `SqsInboundPayload.attachments` 中传递元数据。
+**Phase 2**：参照飞书的附件处理模式（`feishu/message-handler.ts:262-306`），实现完整的下载流水线：下载媒体 → `storeFromBuffer()` 存 S3 → 在 `SqsInboundPayload.attachments` 中传递元数据。已完成。
 
 ### 影响文件
 
@@ -368,8 +369,8 @@ export class DingTalkAdapter extends BaseChannelAdapter {
 
   // Leader 选举方法 — 从 adapters/feishu/index.ts:192-332 复制，改动：
   // - LOCK_SK: 'dingtalk-gateway-leader' (保持与现有值一致)
-  // - RENEW_INTERVAL_MS: 10_000 (保持与现有值一致，飞书为 15_000)
-  // - POLL_INTERVAL_MS: 10_000 (同上)
+  // - RENEW_INTERVAL_MS: 15_000 (与飞书一致)
+  // - POLL_INTERVAL_MS: 15_000 (与飞书一致)
   //
   // 需要复制的 6 个方法:
   //   tryAcquireLock(), renewLock(), releaseLock(), isLockExpired()
@@ -440,8 +441,8 @@ DingTalk Stream 模式下，同一 bot 如果多个 DWClient 连接同一个 cli
 ### 修复 2: 文件/富媒体
 - [ ] 发送文件到私聊用户 → 用户收到文件 (新功能)
 - [ ] 发送图片到群聊 → 群内用户收到图片 (新功能)
-- [ ] 用户发送图片给 Bot → Agent 看到 `[image attachment]` 占位符 (Phase 1)
-- [ ] 用户发送文件给 Bot → Agent 看到 `[file attachment]` 占位符 (Phase 1)
+- [ ] 用户发送图片给 Bot → 下载到 S3，Agent 收到附件元数据 (Phase 2 已实现)
+- [ ] 用户发送文件给 Bot → 下载到 S3，Agent 收到附件元数据 (Phase 2 已实现)
 
 ### 修复 3: 架构对齐
 - [ ] 单实例创建新 DingTalk 机器人 → Stream 连接建立 (修复验证)
