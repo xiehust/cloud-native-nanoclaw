@@ -16,7 +16,11 @@ import {
   getUser,
 } from '../services/dynamo.js';
 import { getCachedBot } from '../services/cached-lookups.js';
-import type { Message, SqsInboundPayload } from '@clawbot/shared';
+import type { Attachment, Message, SqsInboundPayload } from '@clawbot/shared';
+import { getAccessToken, downloadMedia } from '../channels/dingtalk.js';
+import { storeFromBuffer } from '../services/attachments.js';
+import { getChannelCredentials } from '../services/cached-lookups.js';
+import { getChannelsByBot } from '../services/dynamo.js';
 
 const sqs = new SQSClient({ region: config.region });
 
@@ -132,25 +136,35 @@ export async function handleDingTalkMessage(
   data: DingTalkMessageData,
   logger: pino.Logger,
 ): Promise<void> {
-  // Parse content based on message type (Phase 1: text extraction only,
-  // media download deferred to Phase 2 after downloadCode verification)
+  // Parse content based on message type, collect media downloadCodes
   let rawContent = '';
+  interface PendingMedia {
+    downloadCode: string;
+    fallbackName: string;
+    fallbackMime: string;
+  }
+  const pendingMedia: PendingMedia[] = [];
 
   switch (data.msgtype) {
     case 'text':
       rawContent = data.text?.content || '';
       break;
+
     case 'richText': {
-      // Extract plain text from richText nested arrays: [[{tag:'text',text:'...'}, {tag:'img',...}], ...]
       const parts: string[] = [];
       const richText = data.content?.richText;
       if (Array.isArray(richText)) {
+        let imgIdx = 0;
         for (const paragraph of richText) {
           if (Array.isArray(paragraph)) {
             for (const seg of paragraph) {
               if (seg.tag === 'text' && seg.text) {
                 parts.push(seg.text);
-              } else if (seg.tag === 'img' || seg.tag === 'picture') {
+              } else if ((seg.tag === 'img' || seg.tag === 'picture')) {
+                if (seg.downloadCode) {
+                  pendingMedia.push({ downloadCode: seg.downloadCode, fallbackName: `richtext_image_${imgIdx}.png`, fallbackMime: 'image/png' });
+                }
+                imgIdx++;
                 parts.push('[image]');
               }
             }
@@ -158,25 +172,47 @@ export async function handleDingTalkMessage(
         }
       }
       rawContent = parts.length > 0 ? parts.join('') : '[Rich text message — no text extracted]';
-      logger.info({ botId, msgtype: 'richText', extractedLength: rawContent.length }, 'DingTalk richText message parsed');
+      logger.info({ botId, msgtype: 'richText', extractedLength: rawContent.length, mediaCount: pendingMedia.length }, 'DingTalk richText message parsed');
       break;
     }
-    case 'picture':
-      rawContent = '[Image attachment received]';
-      logger.info({ botId, msgtype: 'picture' }, 'DingTalk image message — placeholder used');
+
+    case 'picture': {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const raw = data as any;
+      const dlCode = raw.content?.downloadCode || raw.content?.pictureDownloadCode || '';
+      if (dlCode) pendingMedia.push({ downloadCode: dlCode, fallbackName: `image_${Date.now()}.jpg`, fallbackMime: 'image/jpeg' });
+      rawContent = dlCode ? '[Image attached]' : '[Image received]';
       break;
-    case 'file':
-      rawContent = '[File attachment received]';
-      logger.info({ botId, msgtype: 'file' }, 'DingTalk file message — placeholder used');
+    }
+
+    case 'file': {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const raw = data as any;
+      const dlCode = raw.content?.downloadCode || '';
+      const origName = raw.content?.fileName || `file_${Date.now()}`;
+      if (dlCode) pendingMedia.push({ downloadCode: dlCode, fallbackName: origName, fallbackMime: 'application/octet-stream' });
+      rawContent = `[File: ${origName}]`;
       break;
-    case 'audio':
-      rawContent = '[Audio message received]';
-      logger.info({ botId, msgtype: 'audio' }, 'DingTalk audio message — placeholder used');
+    }
+
+    case 'audio': {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const raw = data as any;
+      const dlCode = raw.content?.downloadCode || '';
+      if (dlCode) pendingMedia.push({ downloadCode: dlCode, fallbackName: `audio_${Date.now()}.mp3`, fallbackMime: 'audio/mpeg' });
+      rawContent = '[Audio received]';
       break;
-    case 'video':
-      rawContent = '[Video message received]';
-      logger.info({ botId, msgtype: 'video' }, 'DingTalk video message — placeholder used');
+    }
+
+    case 'video': {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const raw = data as any;
+      const dlCode = raw.content?.downloadCode || '';
+      if (dlCode) pendingMedia.push({ downloadCode: dlCode, fallbackName: `video_${Date.now()}.mp4`, fallbackMime: 'video/mp4' });
+      rawContent = '[Video received]';
       break;
+    }
+
     default:
       logger.debug({ botId, msgtype: data.msgtype }, 'Skipping unknown DingTalk message type');
       return;
@@ -227,6 +263,44 @@ export async function handleDingTalkMessage(
   // Clean @mention text for cleaner prompts (only in group chats)
   const content = isGroup ? stripBotMentions(rawContent, data.atUsers) : rawContent.trim();
 
+  // Download pending media attachments (requires bot.userId and messageId)
+  const attachments: Attachment[] = [];
+  if (pendingMedia.length > 0) {
+    try {
+      const channels = await getChannelsByBot(botId);
+      const ch = channels.find((c) => c.channelType === 'dingtalk');
+      if (ch) {
+        const creds = await getChannelCredentials(ch.credentialSecretArn);
+        if (creds.clientId && creds.clientSecret) {
+          const token = await getAccessToken(creds.clientId, creds.clientSecret);
+          for (const media of pendingMedia) {
+            try {
+              const result = await downloadMedia(token, creds.clientId, media.downloadCode);
+              if (result) {
+                const att = await storeFromBuffer(
+                  bot.userId, botId, messageId, result.data, media.fallbackName, result.contentType || media.fallbackMime,
+                );
+                if (att) attachments.push(att);
+              }
+            } catch (err) {
+              logger.warn({ err, botId, downloadCode: media.downloadCode.slice(0, 20) }, 'Failed to download DingTalk media');
+            }
+          }
+        }
+      }
+    } catch (err) {
+      logger.warn({ err, botId }, 'Failed to load credentials for media download');
+    }
+    logger.info({ botId, pending: pendingMedia.length, downloaded: attachments.length }, 'DingTalk media download complete');
+  }
+
+  // Annotate content with attachment info for the agent
+  let annotatedContent = content;
+  if (attachments.length > 0) {
+    const fileDescs = attachments.map((a) => `- ${a.fileName || a.s3Key.split('/').pop()} (${a.mimeType})`).join('\n');
+    annotatedContent += `\n[Attached files — saved to /workspace/group/attachments/]\n${fileDescs}`;
+  }
+
   // Store message in DynamoDB
   const timestamp =
     data.createAt > 0
@@ -240,11 +314,12 @@ export async function handleDingTalkMessage(
     messageId,
     sender: data.senderStaffId,
     senderName: data.senderNick || data.senderStaffId,
-    content,
+    content: annotatedContent,
     isFromMe: false,
     isBotMessage: false,
     channelType: 'dingtalk',
     ttl: Math.floor(Date.now() / 1000) + 90 * 24 * 3600,
+    ...(attachments.length > 0 && { attachments }),
   };
 
   try {
@@ -291,6 +366,7 @@ export async function handleDingTalkMessage(
     content: msg.content,
     channelType: 'dingtalk',
     timestamp,
+    ...(attachments.length > 0 && { attachments }),
     replyContext: {
       dingtalkConversationId: data.conversationId,
       dingtalkMsgId: data.msgId,

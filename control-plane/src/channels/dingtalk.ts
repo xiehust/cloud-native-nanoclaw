@@ -390,3 +390,68 @@ export async function sendMediaMessage(
     );
   }
 }
+
+/**
+ * Download media from a DingTalk message using downloadCode (two-step process).
+ * Step 1: POST /v1.0/robot/messageFiles/download → get presigned downloadUrl
+ * Step 2: GET downloadUrl → get file bytes
+ *
+ * @returns { data: ArrayBuffer, contentType: string } or null if download fails
+ */
+export async function downloadMedia(
+  accessToken: string,
+  robotCode: string,
+  downloadCode: string,
+): Promise<{ data: ArrayBuffer; contentType: string } | null> {
+  // Step 1: Get download URL from DingTalk API
+  const url = `${DINGTALK_API}/v1.0/robot/messageFiles/download`;
+  const resp = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'x-acs-dingtalk-access-token': accessToken,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ downloadCode, robotCode }),
+  });
+
+  if (!resp.ok) {
+    const body = await resp.text();
+    throw new Error(`DingTalk downloadMedia failed: ${resp.status} ${resp.statusText} — ${body}`);
+  }
+
+  const result = (await resp.json()) as { downloadUrl?: string };
+  if (!result.downloadUrl) {
+    throw new Error('DingTalk downloadMedia: no downloadUrl in response');
+  }
+
+  // DingTalk OSS URLs may use HTTP — upgrade to HTTPS
+  let downloadUrl = result.downloadUrl;
+  if (downloadUrl.startsWith('http://')) {
+    downloadUrl = 'https://' + downloadUrl.slice(7);
+  }
+
+  // Step 2: Download the actual file
+  const fileResp = await fetch(downloadUrl, { signal: AbortSignal.timeout(60_000) });
+  if (!fileResp.ok) {
+    throw new Error(`DingTalk media download failed: ${fileResp.status} ${fileResp.statusText}`);
+  }
+
+  const contentType = fileResp.headers.get('content-type') || 'application/octet-stream';
+  const data = await fileResp.arrayBuffer();
+
+  // Infer content type from URL if response type is generic
+  let resolvedContentType = contentType;
+  if (contentType === 'application/octet-stream' || contentType === 'binary/octet-stream') {
+    const urlPath = downloadUrl.split('?')[0].toLowerCase();
+    if (urlPath.endsWith('.jpg') || urlPath.endsWith('.jpeg')) resolvedContentType = 'image/jpeg';
+    else if (urlPath.endsWith('.png')) resolvedContentType = 'image/png';
+    else if (urlPath.endsWith('.gif')) resolvedContentType = 'image/gif';
+    else if (urlPath.endsWith('.webp')) resolvedContentType = 'image/webp';
+    else if (urlPath.endsWith('.mp4')) resolvedContentType = 'video/mp4';
+    else if (urlPath.endsWith('.mp3')) resolvedContentType = 'audio/mpeg';
+    else if (urlPath.endsWith('.pdf')) resolvedContentType = 'application/pdf';
+    else if (urlPath.endsWith('.docx')) resolvedContentType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+  }
+
+  return { data, contentType: resolvedContentType };
+}
