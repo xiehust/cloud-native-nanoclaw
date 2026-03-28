@@ -225,10 +225,14 @@ export async function replyGroupMarkdownMessage(
 // ── Old API Token (required for media upload) ──────────────────────────────
 
 const oldTokenCache = new Map<string, CachedToken>();
+const pendingOldTokenRequests = new Map<string, Promise<string>>();
 
 /**
  * Get an old-style access_token via oapi.dingtalk.com/gettoken.
  * Required for media upload which is only available on the old API.
+ *
+ * Token is cached in-memory and refreshed 5 minutes before expiry.
+ * Concurrent requests for the same appKey are deduplicated.
  */
 async function getOldAccessToken(appKey: string, appSecret: string): Promise<string> {
   const cached = oldTokenCache.get(appKey);
@@ -236,6 +240,18 @@ async function getOldAccessToken(appKey: string, appSecret: string): Promise<str
     return cached.token;
   }
 
+  // Deduplicate concurrent requests for the same appKey
+  const pending = pendingOldTokenRequests.get(appKey);
+  if (pending) return pending;
+
+  const promise = fetchOldAccessToken(appKey, appSecret).finally(() => {
+    pendingOldTokenRequests.delete(appKey);
+  });
+  pendingOldTokenRequests.set(appKey, promise);
+  return promise;
+}
+
+async function fetchOldAccessToken(appKey: string, appSecret: string): Promise<string> {
   const url = `https://oapi.dingtalk.com/gettoken?appkey=${encodeURIComponent(appKey)}&appsecret=${encodeURIComponent(appSecret)}`;
   const resp = await fetch(url);
 
@@ -434,6 +450,13 @@ export async function downloadMedia(
   const fileResp = await fetch(downloadUrl, { signal: AbortSignal.timeout(60_000) });
   if (!fileResp.ok) {
     throw new Error(`DingTalk media download failed: ${fileResp.status} ${fileResp.statusText}`);
+  }
+
+  // Guard against oversized downloads before reading into memory
+  const contentLength = Number(fileResp.headers.get('content-length') || 0);
+  const MAX_DOWNLOAD_SIZE = 30 * 1024 * 1024; // 30 MB
+  if (contentLength > MAX_DOWNLOAD_SIZE) {
+    throw new Error(`DingTalk media too large: ${(contentLength / 1024 / 1024).toFixed(1)} MB (max ${MAX_DOWNLOAD_SIZE / 1024 / 1024} MB)`);
   }
 
   const contentType = fileResp.headers.get('content-type') || 'application/octet-stream';

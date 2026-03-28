@@ -169,6 +169,7 @@ export class DingTalkAdapter extends BaseChannelAdapter {
       await this.becomeLeader();
     } else {
       this.logger.info('DingTalk: another instance is leader, entering standby');
+      this.gateway.markStopped(); // Prevent addBot() from creating connections on non-leader
       this.startStandbyPoll();
     }
   }
@@ -299,6 +300,9 @@ export class DingTalkAdapter extends BaseChannelAdapter {
       clearTimeout(this.initialPollTimer);
       this.initialPollTimer = null;
     }
+
+    // Reset gateway stopped state for new leadership
+    if (this.gateway) this.gateway.resetStopped();
 
     this.isLeader = true;
 

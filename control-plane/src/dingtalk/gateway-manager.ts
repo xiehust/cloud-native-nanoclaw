@@ -126,6 +126,16 @@ export class DingTalkGatewayManager {
     return this.connections.size > 0;
   }
 
+  /** Mark gateway as stopped (used by adapter for non-leader instances) */
+  markStopped(): void {
+    this.stopped = true;
+  }
+
+  /** Reset stopped state (used when adapter becomes leader) */
+  resetStopped(): void {
+    this.stopped = false;
+  }
+
   // -- Private ----------------------------------------------------------------
 
   private async connectBot(ch: ChannelConfig): Promise<void> {

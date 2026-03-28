@@ -42,7 +42,12 @@ export interface DingTalkMessageData {
   sessionWebhook: string;       // webhook URL for quick reply
   robotCode: string;            // robot app key
   text?: { content: string };   // message text content (present for text messages)
-  content?: { richText?: Array<{ downloadCode?: string; pictureDownloadCode?: string; tag?: string; text?: string; type?: string }> };
+  content?: {
+    richText?: Array<{ downloadCode?: string; pictureDownloadCode?: string; tag?: string; text?: string; type?: string }>;
+    downloadCode?: string;
+    pictureDownloadCode?: string;
+    fileName?: string;
+  };
   msgtype: 'text' | 'richText' | 'picture' | 'audio' | 'video' | 'file';
   isInAtList?: boolean;         // whether bot was @mentioned
   atUsers?: Array<{ dingtalkId: string; staffId?: string }>;
@@ -175,37 +180,29 @@ export async function handleDingTalkMessage(
     }
 
     case 'picture': {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const raw = data as any;
-      const dlCode = raw.content?.downloadCode || raw.content?.pictureDownloadCode || '';
+      const dlCode = data.content?.downloadCode || data.content?.pictureDownloadCode || '';
       if (dlCode) pendingMedia.push({ downloadCode: dlCode, fallbackName: `image_${Date.now()}.jpg`, fallbackMime: 'image/jpeg' });
       rawContent = dlCode ? '[Image attached]' : '[Image received]';
       break;
     }
 
     case 'file': {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const raw = data as any;
-      const dlCode = raw.content?.downloadCode || '';
-      const origName = raw.content?.fileName || `file_${Date.now()}`;
+      const dlCode = data.content?.downloadCode || '';
+      const origName = data.content?.fileName || `file_${Date.now()}`;
       if (dlCode) pendingMedia.push({ downloadCode: dlCode, fallbackName: origName, fallbackMime: 'application/octet-stream' });
       rawContent = `[File: ${origName}]`;
       break;
     }
 
     case 'audio': {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const raw = data as any;
-      const dlCode = raw.content?.downloadCode || '';
+      const dlCode = data.content?.downloadCode || '';
       if (dlCode) pendingMedia.push({ downloadCode: dlCode, fallbackName: `audio_${Date.now()}.mp3`, fallbackMime: 'audio/mpeg' });
       rawContent = '[Audio received]';
       break;
     }
 
     case 'video': {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const raw = data as any;
-      const dlCode = raw.content?.downloadCode || '';
+      const dlCode = data.content?.downloadCode || '';
       if (dlCode) pendingMedia.push({ downloadCode: dlCode, fallbackName: `video_${Date.now()}.mp4`, fallbackMime: 'video/mp4' });
       rawContent = '[Video received]';
       break;
