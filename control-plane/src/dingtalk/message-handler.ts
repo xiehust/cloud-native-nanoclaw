@@ -38,6 +38,7 @@ export interface DingTalkMessageData {
   sessionWebhook: string;       // webhook URL for quick reply
   robotCode: string;            // robot app key
   text?: { content: string };   // message text content (present for text messages)
+  content?: { richText?: Array<Array<{ tag: string; text?: string; downloadCode?: string; type?: string }>> };
   msgtype: 'text' | 'richText' | 'picture' | 'audio' | 'video' | 'file';
   isInAtList?: boolean;         // whether bot was @mentioned
   atUsers?: Array<{ dingtalkId: string; staffId?: string }>;
@@ -139,11 +140,27 @@ export async function handleDingTalkMessage(
     case 'text':
       rawContent = data.text?.content || '';
       break;
-    case 'richText':
-      // Extract plain text from richText structure
-      rawContent = '[Rich text message received]';
-      logger.info({ botId, msgtype: 'richText' }, 'DingTalk richText message — text placeholder used');
+    case 'richText': {
+      // Extract plain text from richText nested arrays: [[{tag:'text',text:'...'}, {tag:'img',...}], ...]
+      const parts: string[] = [];
+      const richText = data.content?.richText;
+      if (Array.isArray(richText)) {
+        for (const paragraph of richText) {
+          if (Array.isArray(paragraph)) {
+            for (const seg of paragraph) {
+              if (seg.tag === 'text' && seg.text) {
+                parts.push(seg.text);
+              } else if (seg.tag === 'img' || seg.tag === 'picture') {
+                parts.push('[image]');
+              }
+            }
+          }
+        }
+      }
+      rawContent = parts.length > 0 ? parts.join('') : '[Rich text message — no text extracted]';
+      logger.info({ botId, msgtype: 'richText', extractedLength: rawContent.length }, 'DingTalk richText message parsed');
       break;
+    }
     case 'picture':
       rawContent = '[Image attachment received]';
       logger.info({ botId, msgtype: 'picture' }, 'DingTalk image message — placeholder used');
