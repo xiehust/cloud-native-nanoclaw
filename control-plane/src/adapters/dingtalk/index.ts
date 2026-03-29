@@ -17,7 +17,7 @@ import {
   type DingTalkGatewayManager,
   initDingTalkGatewayManager,
 } from '../../dingtalk/gateway-manager.js';
-import { getChannelsByBot, getRecentMessages } from '../../services/dynamo.js';
+import { getChannelsByBot, getRecentMessages, getGroup } from '../../services/dynamo.js';
 import { getChannelCredentials } from '../../services/cached-lookups.js';
 
 // ── Constants ────────────────────────────────────────────────────────────────
@@ -156,14 +156,29 @@ export class DingTalkAdapter extends BaseChannelAdapter {
   // ── Helpers ────────────────────────────────────────────────────────────
 
   /**
+   * Resolve whether this context is a group chat.
+   * SQS reply path doesn't include dingtalkIsGroup, so we look up the Group record.
+   */
+  private async resolveIsGroup(ctx: ReplyContext): Promise<boolean> {
+    if (ctx.dingtalkIsGroup !== undefined) return ctx.dingtalkIsGroup;
+
+    try {
+      const group = await getGroup(ctx.botId, ctx.groupJid);
+      if (group) return group.isGroup;
+    } catch (err) {
+      this.logger.warn({ err, botId: ctx.botId, groupJid: ctx.groupJid }, 'Failed to look up group for isGroup');
+    }
+    return false; // default to DM if unknown
+  }
+
+  /**
    * Recover dingtalkSenderStaffId when missing from ReplyContext.
    * SQS reply path doesn't include channel-specific replyContext fields,
    * so we look up the most recent inbound message to get the sender.
    */
-  private async recoverSenderStaffId(ctx: ReplyContext): Promise<string | undefined> {
+  private async recoverSenderStaffId(ctx: ReplyContext, isGroup: boolean): Promise<string | undefined> {
     if (ctx.dingtalkSenderStaffId) return ctx.dingtalkSenderStaffId;
 
-    const isGroup = ctx.dingtalkIsGroup ?? false;
     if (isGroup) return undefined; // groups don't need staffId
 
     try {
@@ -229,10 +244,10 @@ export class DingTalkAdapter extends BaseChannelAdapter {
       // Determine conversation ID and message type
       const conversationId =
         ctx.dingtalkConversationId || ctx.groupJid.replace(/^dt:/, '');
-      const isGroup = ctx.dingtalkIsGroup ?? false;
+      const isGroup = await this.resolveIsGroup(ctx);
 
       // Recover senderStaffId if missing (SQS reply path)
-      const senderStaffId = await this.recoverSenderStaffId(ctx);
+      const senderStaffId = await this.recoverSenderStaffId(ctx, isGroup);
 
       // Split long messages into chunks
       const chunks = chunkMarkdownText(text);
@@ -327,8 +342,8 @@ export class DingTalkAdapter extends BaseChannelAdapter {
       const mediaId = await uploadMedia(clientId, clientSecret, file, fileName, mediaType);
 
       // Send media message
-      const isGroup = ctx.dingtalkIsGroup ?? false;
-      const senderStaffId = await this.recoverSenderStaffId(ctx);
+      const isGroup = await this.resolveIsGroup(ctx);
+      const senderStaffId = await this.recoverSenderStaffId(ctx, isGroup);
 
       const conversationId = ctx.dingtalkConversationId || ctx.groupJid.replace(/^dt:/, '');
       const target = isGroup
