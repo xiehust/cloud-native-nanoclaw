@@ -164,7 +164,11 @@ export class DingTalkAdapter extends BaseChannelAdapter {
 
     try {
       const group = await getGroup(ctx.botId, ctx.groupJid);
-      if (group) return group.isGroup;
+      if (group) {
+        this.logger.info({ botId: ctx.botId, groupJid: ctx.groupJid, isGroup: group.isGroup }, 'Resolved isGroup from DynamoDB Group record');
+        return group.isGroup;
+      }
+      this.logger.warn({ botId: ctx.botId, groupJid: ctx.groupJid }, 'Group record not found in DynamoDB, defaulting to DM');
     } catch (err) {
       this.logger.warn({ err, botId: ctx.botId, groupJid: ctx.groupJid }, 'Failed to look up group for isGroup');
     }
