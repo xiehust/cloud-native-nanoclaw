@@ -1,15 +1,9 @@
 // DingTalk Channel Adapter
 // Manages DingTalk Stream (WebSocket) gateway connections for inbound messages.
 // Uses DingTalk REST API for outbound replies, with sessionWebhook fast-path.
-// Leader election at Adapter layer (aligned with Feishu/Discord pattern).
+// No leader election — all instances connect independently.
+// SQS FIFO MessageDeduplicationId suppresses duplicate messages.
 
-import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import {
-  DynamoDBDocumentClient,
-  PutCommand,
-  DeleteCommand,
-  GetCommand,
-} from '@aws-sdk/lib-dynamodb';
 import { BaseChannelAdapter } from '../base.js';
 import type { ReplyContext, ReplyOptions } from '@clawbot/shared/channel-adapter';
 import {
@@ -25,25 +19,6 @@ import {
 } from '../../dingtalk/gateway-manager.js';
 import { getChannelsByBot, getRecentMessages } from '../../services/dynamo.js';
 import { getChannelCredentials } from '../../services/cached-lookups.js';
-import { config } from '../../config.js';
-
-// ── Leader Election Constants ────────────────────────────────────────────────
-
-const LOCK_TABLE = config.tables.sessions;
-const LOCK_PK = '__system__';
-const LOCK_SK = 'dingtalk-gateway-leader';
-const LOCK_TTL_S = 30;
-const RENEW_INTERVAL_MS = 15_000;
-const POLL_INTERVAL_MS = 15_000;
-const POLL_INITIAL_DELAY_MS = 5_000;
-
-const INSTANCE_ID =
-  process.env.ECS_TASK_ID ||
-  `local-${process.pid}-${Date.now().toString(36)}`;
-
-const ddb = DynamoDBDocumentClient.from(
-  new DynamoDBClient({ region: config.region }),
-);
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -143,11 +118,6 @@ export class DingTalkAdapter extends BaseChannelAdapter {
   readonly channelType = 'dingtalk';
   private gateway: DingTalkGatewayManager | null = null;
 
-  // ── Leader Election State ───────────────────────────────────────────────
-  private isLeader = false;
-  private renewTimer: ReturnType<typeof setInterval> | null = null;
-  private pollTimer: ReturnType<typeof setInterval> | null = null;
-  private initialPollTimer: ReturnType<typeof setTimeout> | null = null;
   private stopped = false;
 
   constructor(parentLogger: import('pino').Logger) {
@@ -160,216 +130,28 @@ export class DingTalkAdapter extends BaseChannelAdapter {
   async start(): Promise<void> {
     this.stopped = false;
 
-    // Initialize the singleton gateway manager
+    // Initialize the singleton gateway manager and connect all bots directly.
+    // No leader election — every instance connects independently.
+    // SQS FIFO MessageDeduplicationId handles duplicate message suppression.
     this.gateway = initDingTalkGatewayManager(this.logger);
 
-    const acquired = await this.tryAcquireLock();
-    if (acquired) {
-      await this.becomeLeader();
-    } else {
-      this.logger.info('DingTalk: another instance is leader, entering standby');
-      this.gateway.markStopped(); // Prevent addBot() from creating connections on non-leader
-      this.startStandbyPoll();
+    try {
+      await this.gateway.start();
+      this.logger.info('DingTalk gateway started (all instances connect independently)');
+    } catch (err) {
+      this.logger.error(err, 'Failed to start DingTalk gateway');
     }
   }
 
   async stop(): Promise<void> {
     this.stopped = true;
-
-    if (this.renewTimer) {
-      clearInterval(this.renewTimer);
-      this.renewTimer = null;
-    }
-    if (this.pollTimer) {
-      clearInterval(this.pollTimer);
-      this.pollTimer = null;
-    }
-    if (this.initialPollTimer) {
-      clearTimeout(this.initialPollTimer);
-      this.initialPollTimer = null;
-    }
-
     if (this.gateway) {
       await this.gateway.stopAll();
     }
-
-    if (this.isLeader) {
-      await this.releaseLock();
-      this.isLeader = false;
-    }
   }
 
-  // ── Leader Election ─────────────────────────────────────────────────────
-
-  private async tryAcquireLock(): Promise<boolean> {
-    const now = Math.floor(Date.now() / 1000);
-    try {
-      await ddb.send(
-        new PutCommand({
-          TableName: LOCK_TABLE,
-          Item: {
-            pk: LOCK_PK,
-            sk: LOCK_SK,
-            leaderId: INSTANCE_ID,
-            expiresAt: now + LOCK_TTL_S,
-          },
-          ConditionExpression:
-            'attribute_not_exists(pk) OR expiresAt < :now',
-          ExpressionAttributeValues: { ':now': now },
-        }),
-      );
-      this.logger.info({ instanceId: INSTANCE_ID }, 'DingTalk leader lock acquired');
-      return true;
-    } catch (err: unknown) {
-      if ((err as { name?: string }).name === 'ConditionalCheckFailedException') {
-        return false;
-      }
-      this.logger.error(err, 'Failed to acquire DingTalk leader lock');
-      return false;
-    }
-  }
-
-  private async renewLock(): Promise<boolean> {
-    const now = Math.floor(Date.now() / 1000);
-    try {
-      await ddb.send(
-        new PutCommand({
-          TableName: LOCK_TABLE,
-          Item: {
-            pk: LOCK_PK,
-            sk: LOCK_SK,
-            leaderId: INSTANCE_ID,
-            expiresAt: now + LOCK_TTL_S,
-          },
-          ConditionExpression: 'leaderId = :me',
-          ExpressionAttributeValues: { ':me': INSTANCE_ID },
-        }),
-      );
-      return true;
-    } catch {
-      this.logger.warn('Failed to renew DingTalk leader lock, stepping down');
-      return false;
-    }
-  }
-
-  private async releaseLock(): Promise<void> {
-    try {
-      await ddb.send(
-        new DeleteCommand({
-          TableName: LOCK_TABLE,
-          Key: { pk: LOCK_PK, sk: LOCK_SK },
-          ConditionExpression: 'leaderId = :me',
-          ExpressionAttributeValues: { ':me': INSTANCE_ID },
-        }),
-      );
-      this.logger.info('DingTalk leader lock released');
-    } catch {
-      // Already expired or taken
-    }
-  }
-
-  private async isLockExpired(): Promise<boolean> {
-    try {
-      const res = await ddb.send(
-        new GetCommand({
-          TableName: LOCK_TABLE,
-          Key: { pk: LOCK_PK, sk: LOCK_SK },
-        }),
-      );
-      if (!res.Item) return true;
-      return (res.Item.expiresAt as number) < Math.floor(Date.now() / 1000);
-    } catch {
-      return true;
-    }
-  }
-
-  // ── Leader Lifecycle ────────────────────────────────────────────────────
-
-  private async becomeLeader(): Promise<void> {
-    // Clear any leftover timers from previous leader/standby cycle
-    if (this.renewTimer) {
-      clearInterval(this.renewTimer);
-      this.renewTimer = null;
-    }
-    if (this.pollTimer) {
-      clearInterval(this.pollTimer);
-      this.pollTimer = null;
-    }
-    if (this.initialPollTimer) {
-      clearTimeout(this.initialPollTimer);
-      this.initialPollTimer = null;
-    }
-
-    // Reset gateway stopped state for new leadership
-    if (this.gateway) this.gateway.resetStopped();
-
-    this.isLeader = true;
-
-    this.logger.info('DingTalk: became leader, starting gateway connections');
-
-    try {
-      await this.gateway!.start();
-    } catch (err) {
-      this.logger.error(err, 'Failed to start DingTalk gateway');
-      this.isLeader = false;
-      await this.releaseLock();
-      return;
-    }
-
-    this.startRenewLoop();
-  }
-
-  private startRenewLoop(): void {
-    if (this.renewTimer) {
-      clearInterval(this.renewTimer);
-    }
-    this.renewTimer = setInterval(async () => {
-      if (this.stopped) return;
-      const ok = await this.renewLock();
-      if (!ok) {
-        this.logger.warn('Lost DingTalk leader lock, stopping gateway');
-        if (this.gateway) {
-          await this.gateway.stopAll();
-        }
-        this.isLeader = false;
-        if (!this.stopped) {
-          this.startStandbyPoll();
-        }
-      }
-    }, RENEW_INTERVAL_MS);
-  }
-
-  private startStandbyPoll(): void {
-    if (this.initialPollTimer) {
-      clearTimeout(this.initialPollTimer);
-      this.initialPollTimer = null;
-    }
-    if (this.pollTimer) {
-      clearInterval(this.pollTimer);
-      this.pollTimer = null;
-    }
-    const poll = async () => {
-      if (this.stopped) return;
-      const expired = await this.isLockExpired();
-      if (expired) {
-        this.logger.info('DingTalk leader lock expired, attempting takeover');
-        if (this.pollTimer) {
-          clearInterval(this.pollTimer);
-          this.pollTimer = null;
-        }
-        const acquired = await this.tryAcquireLock();
-        if (acquired) {
-          await this.becomeLeader();
-        } else {
-          this.startStandbyPoll();
-        }
-      }
-    };
-    // First check quickly (covers rolling update where old leader just died)
-    this.initialPollTimer = setTimeout(poll, POLL_INITIAL_DELAY_MS);
-    // Then regular interval
-    this.pollTimer = setInterval(poll, POLL_INTERVAL_MS);
-  }
+  // Leader election removed — all instances connect independently.
+  // SQS FIFO MessageDeduplicationId (messageId) suppresses duplicate messages.
 
   // ── Helpers ────────────────────────────────────────────────────────────
 
