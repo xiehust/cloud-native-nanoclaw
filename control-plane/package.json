@@ -25,6 +25,7 @@
     "@clawbot/shared": "*",
     "@fastify/cors": "^10.0.0",
     "@fastify/multipart": "^9.4.0",
+    "@fastify/websocket": "^11.2.0",
     "@larksuiteoapi/node-sdk": "^1.59.0",
     "adm-zip": "^0.5.16",
     "aws-jwt-verify": "^4.0.0",

@@ -75,6 +75,9 @@ export const config = {
 
   // Cache TTL
   cacheTtlMs: Number(process.env.CACHE_TTL_MS) || 5 * 60 * 1000, // 5 minutes
+
+  /** Shared secret for Ad-Platform (or other backends) to call API with X-Integration-Secret + X-Nanoclaw-Bot-Owner-User-Id */
+  integrationSecret: process.env.INTEGRATION_SECRET || '',
 } as const;
 
 /**

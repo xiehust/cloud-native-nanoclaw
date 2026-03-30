@@ -32,7 +32,13 @@ import {
 } from '@aws-sdk/client-scheduler';
 // cron-parser removed — AWS EventBridge validates cron expressions directly
 import type { ScopedClients } from './scoped-credentials.js';
-import type { ScheduledTask, SqsTextReplyPayload, SqsFileReplyPayload, ChannelType } from '@clawbot/shared';
+import type {
+  ScheduledTask,
+  SqsTextReplyPayload,
+  SqsFileReplyPayload,
+  ChannelType,
+  SqsReplyContext,
+} from '@clawbot/shared';
 
 const REPLY_QUEUE_URL = process.env.SQS_REPLIES_URL || '';
 const TASKS_TABLE = process.env.TABLE_TASKS || '';
@@ -46,6 +52,7 @@ export interface McpToolContext {
   groupJid: string;
   userId: string;
   channelType: ChannelType;
+  replyContext?: SqsReplyContext;
   clients: ScopedClients;
 }
 
@@ -66,6 +73,7 @@ export async function sendMessage(
     channelType: ctx.channelType,
     text,
     timestamp: new Date().toISOString(),
+    replyContext: ctx.replyContext,
   };
 
   // Reply queue uses the runtime's own credentials (not scoped)
@@ -135,6 +143,7 @@ export async function sendFile(
     size: fileBuffer.length,
     caption,
     timestamp: new Date().toISOString(),
+    replyContext: ctx.replyContext,
   };
 
   const sqs = new SQSClient({});

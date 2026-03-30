@@ -360,6 +360,7 @@ async function dispatchMessage(
         learnings: `${payload.userId}/${payload.botId}/learnings/`,
       },
       isGroupChat: group?.isGroup,
+      ...(payload.replyContext && { replyContext: payload.replyContext }),
       ...(payload.attachments && payload.attachments.length > 0 && {
         attachments: payload.attachments,
       }),
@@ -388,19 +389,21 @@ async function dispatchMessage(
       } else {
         const replyText = formatOutbound(result.result);
         if (replyText) {
-          await putMessage({
-            botId: payload.botId,
-            groupJid: payload.groupJid,
-            timestamp: new Date().toISOString(),
-            messageId: `bot-${Date.now()}`,
-            sender: bot.name,
-            senderName: bot.name,
-            content: replyText,
-            isFromMe: true,
-            isBotMessage: true,
-            channelType: payload.channelType,
-            ttl: Math.floor(Date.now() / 1000) + 90 * 24 * 3600,
-          });
+          if (payload.channelType !== 'web') {
+            await putMessage({
+              botId: payload.botId,
+              groupJid: payload.groupJid,
+              timestamp: new Date().toISOString(),
+              messageId: `bot-${Date.now()}`,
+              sender: bot.name,
+              senderName: bot.name,
+              content: replyText,
+              isFromMe: true,
+              isBotMessage: true,
+              channelType: payload.channelType,
+              ttl: Math.floor(Date.now() / 1000) + 90 * 24 * 3600,
+            });
+          }
 
           // 9. Send reply via channel adapter
           const durationMs = Date.now() - startTime;
@@ -556,19 +559,21 @@ async function dispatchTask(
     } else {
       const replyText = formatOutbound(result.result);
       if (replyText) {
-        await putMessage({
-          botId: payload.botId,
-          groupJid: payload.groupJid,
-          timestamp: new Date().toISOString(),
-          messageId: `task-${payload.taskId}-${Date.now()}`,
-          sender: bot.name,
-          senderName: bot.name,
-          content: replyText,
-          isFromMe: true,
-          isBotMessage: true,
-          channelType,
-          ttl: Math.floor(Date.now() / 1000) + 90 * 24 * 3600,
-        });
+        if (channelType !== 'web') {
+          await putMessage({
+            botId: payload.botId,
+            groupJid: payload.groupJid,
+            timestamp: new Date().toISOString(),
+            messageId: `task-${payload.taskId}-${Date.now()}`,
+            sender: bot.name,
+            senderName: bot.name,
+            content: replyText,
+            isFromMe: true,
+            isBotMessage: true,
+            channelType,
+            ttl: Math.floor(Date.now() / 1000) + 90 * 24 * 3600,
+          });
+        }
 
         // Send reply via channel API
         await sendChannelReply(

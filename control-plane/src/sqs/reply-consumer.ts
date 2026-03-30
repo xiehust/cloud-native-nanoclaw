@@ -79,6 +79,7 @@ async function replyLoop(logger: Logger): Promise<void> {
             botId: payload.botId,
             groupJid: payload.groupJid,
             channelType: payload.channelType as ChannelType,
+            ...payload.replyContext,
           };
 
           if (payload.type === 'file_reply') {

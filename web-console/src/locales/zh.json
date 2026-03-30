@@ -386,6 +386,14 @@
       "fillCredentials": "请填入 ClientId 和 ClientSecret："
     }
   },
+  "webchat": {
+    "title": "对话",
+    "empty": "发送消息开始与机器人对话。",
+    "placeholder": "输入消息...",
+    "hint": "按 Enter 发送，Shift+Enter 换行",
+    "you": "你",
+    "openChat": "对话"
+  },
   "messages": {
     "title": "消息",
     "noMessages": "暂无消息"

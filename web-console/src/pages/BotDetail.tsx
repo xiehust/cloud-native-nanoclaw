@@ -1142,7 +1142,16 @@ export default function BotDetail() {
           <h1 className="text-2xl font-semibold text-slate-900">{bot.name}</h1>
           {bot.description && <p className="text-sm text-slate-500 mt-1">{bot.description}</p>}
         </div>
-        <Badge variant={bot.status === 'active' ? 'success' : 'neutral'}>{bot.status}</Badge>
+        <div className="flex items-center gap-3">
+          <Link
+            to={`/bots/${botId}/chat`}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-accent-500 text-white px-4 py-2 text-sm font-medium hover:bg-accent-600 transition-colors"
+          >
+            <MessageSquare size={16} />
+            {t('webchat.openChat')}
+          </Link>
+          <Badge variant={bot.status === 'active' ? 'success' : 'neutral'}>{bot.status}</Badge>
+        </div>
       </div>
 
       {/* Tabs */}
