@@ -243,7 +243,3 @@ ECS Fargate + AgentCore microVM 的 Serverless 架构并未引入显著的冷启
 | Prompt Cache | 1h TTL（cacheRetention: long） |
 | 测试日期 | 2026-03-28 |
 | 测试区域 | ap-northeast-1（Tokyo） |
-
----
-
-*— 报告由小骑士统筹 × 灵魂大师分析 × 席奥撰写 —*
