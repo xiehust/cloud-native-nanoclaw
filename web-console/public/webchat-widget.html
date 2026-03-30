@@ -1,0 +1,283 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ClawBot Web Widget</title>
+    <style>
+      :root {
+        color-scheme: light;
+        font-family: Inter, "PingFang SC", "Microsoft YaHei", sans-serif;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background: #f8fafc;
+        color: #0f172a;
+      }
+
+      .widget {
+        width: 100%;
+        height: 100vh;
+        display: flex;
+        flex-direction: column;
+        background: #fff;
+        border: 1px solid #e2e8f0;
+      }
+
+      .header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 14px 16px;
+        border-bottom: 1px solid #e2e8f0;
+      }
+
+      .title {
+        font-size: 14px;
+        font-weight: 600;
+      }
+
+      .status {
+        font-size: 12px;
+        color: #64748b;
+      }
+
+      .messages {
+        flex: 1;
+        overflow-y: auto;
+        padding: 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        background: #f8fafc;
+      }
+
+      .row {
+        display: flex;
+      }
+
+      .row.user {
+        justify-content: flex-end;
+      }
+
+      .bubble {
+        max-width: 78%;
+        border-radius: 14px;
+        padding: 10px 12px;
+        font-size: 14px;
+        line-height: 1.5;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+
+      .row.bot .bubble {
+        background: #fff;
+        border: 1px solid #e2e8f0;
+      }
+
+      .row.user .bubble {
+        background: #2563eb;
+        color: #fff;
+      }
+
+      .empty,
+      .error {
+        padding: 16px;
+        font-size: 13px;
+        color: #64748b;
+      }
+
+      .error {
+        color: #dc2626;
+        border-top: 1px solid #fee2e2;
+        background: #fef2f2;
+      }
+
+      .composer {
+        display: flex;
+        gap: 12px;
+        padding: 14px 16px;
+        border-top: 1px solid #e2e8f0;
+        background: #fff;
+      }
+
+      textarea {
+        flex: 1;
+        resize: none;
+        min-height: 42px;
+        max-height: 128px;
+        border: 1px solid #cbd5e1;
+        border-radius: 10px;
+        padding: 10px 12px;
+        font: inherit;
+      }
+
+      button {
+        border: 0;
+        border-radius: 10px;
+        background: #2563eb;
+        color: #fff;
+        padding: 0 16px;
+        cursor: pointer;
+        font: inherit;
+      }
+
+      button:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="widget">
+      <div class="header">
+        <div class="title" id="title">ClawBot</div>
+        <div class="status" id="status">连接中...</div>
+      </div>
+      <div class="messages" id="messages">
+        <div class="empty" id="empty">等待建立 WebSocket 连接...</div>
+      </div>
+      <div class="error" id="error" hidden></div>
+      <div class="composer">
+        <textarea id="input" placeholder="输入消息，Enter 发送，Shift+Enter 换行"></textarea>
+        <button id="send">发送</button>
+      </div>
+    </div>
+
+    <script>
+      const params = new URLSearchParams(window.location.search);
+      const botId = params.get('botId');
+      const token = params.get('token');
+      const apiBase = params.get('apiBase') || `${window.location.origin}/api`;
+      const title = params.get('title') || 'ClawBot';
+
+      const titleEl = document.getElementById('title');
+      const statusEl = document.getElementById('status');
+      const messagesEl = document.getElementById('messages');
+      const emptyEl = document.getElementById('empty');
+      const errorEl = document.getElementById('error');
+      const inputEl = document.getElementById('input');
+      const sendEl = document.getElementById('send');
+
+      let socket = null;
+      const seen = new Set();
+
+      titleEl.textContent = title;
+
+      function setError(message) {
+        errorEl.hidden = !message;
+        errorEl.textContent = message || '';
+      }
+
+      function setStatus(text) {
+        statusEl.textContent = text;
+      }
+
+      function toWsUrl(base, botId, token) {
+        const url = /^https?:\/\//.test(base)
+          ? new URL(base)
+          : new URL(base, window.location.origin);
+        url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+        url.pathname = `${url.pathname.replace(/\/$/, '')}/bots/${botId}/webchat/ws`;
+        url.search = '';
+        url.searchParams.set('token', token);
+        return url.toString();
+      }
+
+      function scrollToBottom() {
+        messagesEl.scrollTop = messagesEl.scrollHeight;
+      }
+
+      function addMessage(message) {
+        if (!message || seen.has(message.messageId)) return;
+        seen.add(message.messageId);
+        emptyEl.hidden = true;
+
+        const row = document.createElement('div');
+        row.className = `row ${message.isBotMessage ? 'bot' : 'user'}`;
+
+        const bubble = document.createElement('div');
+        bubble.className = 'bubble';
+        bubble.textContent = message.content;
+        row.appendChild(bubble);
+        messagesEl.appendChild(row);
+        scrollToBottom();
+      }
+
+      function connect() {
+        if (!botId || !token) {
+          setStatus('缺少 botId 或 token');
+          setError('请通过 ?botId=xxx&token=xxx 传入连接参数。');
+          sendEl.disabled = true;
+          inputEl.disabled = true;
+          return;
+        }
+
+        socket = new WebSocket(toWsUrl(apiBase, botId, token));
+
+        socket.addEventListener('open', () => {
+          setStatus('已连接');
+          setError('');
+          sendEl.disabled = false;
+          inputEl.disabled = false;
+        });
+
+        socket.addEventListener('close', () => {
+          setStatus('连接已断开');
+          sendEl.disabled = true;
+        });
+
+        socket.addEventListener('error', () => {
+          setError('WebSocket 连接失败');
+        });
+
+        socket.addEventListener('message', (event) => {
+          try {
+            const payload = JSON.parse(event.data);
+            if (payload.type === 'history') {
+              messagesEl.innerHTML = '';
+              messagesEl.appendChild(emptyEl);
+              emptyEl.hidden = payload.messages.length > 0;
+              payload.messages.forEach(addMessage);
+            } else if (payload.type === 'message') {
+              addMessage(payload.message);
+            } else if (payload.type === 'error') {
+              setError(payload.error || '未知错误');
+            }
+          } catch (err) {
+            console.error('Failed to parse widget message', err);
+          }
+        });
+      }
+
+      function sendMessage() {
+        const content = inputEl.value.trim();
+        if (!content || !socket || socket.readyState !== WebSocket.OPEN) return;
+
+        socket.send(
+          JSON.stringify({
+            type: 'send_message',
+            content,
+            clientMessageId: `widget-${Date.now()}`,
+          }),
+        );
+        inputEl.value = '';
+      }
+
+      sendEl.addEventListener('click', sendMessage);
+      inputEl.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter' && !event.shiftKey) {
+          event.preventDefault();
+          sendMessage();
+        }
+      });
+
+      connect();
+    </script>
+  </body>
+</html>

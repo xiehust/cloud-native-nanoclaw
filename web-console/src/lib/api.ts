@@ -44,6 +44,23 @@ async function uploadRequest<T>(path: string, formData: FormData): Promise<T> {
   return response.json();
 }
 
+function resolveWebSocketUrl(path: string, params: Record<string, string>): string {
+  const baseUrl = /^https?:\/\//.test(BASE_URL)
+    ? new URL(BASE_URL)
+    : new URL(BASE_URL, window.location.origin);
+
+  const wsUrl = new URL(baseUrl.toString());
+  wsUrl.protocol = wsUrl.protocol === 'https:' ? 'wss:' : 'ws:';
+  wsUrl.pathname = `${wsUrl.pathname.replace(/\/$/, '')}${path}`;
+  wsUrl.search = '';
+
+  Object.entries(params).forEach(([key, value]) => {
+    wsUrl.searchParams.set(key, value);
+  });
+
+  return wsUrl.toString();
+}
+
 // Types (simplified from shared, for frontend use)
 export interface Bot {
   botId: string;
@@ -101,6 +118,12 @@ export interface Message {
   isFromMe: boolean;
   isBotMessage: boolean;
 }
+
+export type WebChatSocketEvent =
+  | { type: 'connected'; sessionId: string }
+  | { type: 'history'; messages: Message[] }
+  | { type: 'message'; message: Message }
+  | { type: 'error'; error: string };
 
 export interface ScheduledTask {
   taskId: string;
@@ -368,6 +391,48 @@ export const proxyRules = {
   create: (rule: ProxyRuleInput) => request<ProxyRuleSummary>('/proxy-rules', { method: 'POST', body: JSON.stringify(rule) }),
   update: (id: string, rule: Partial<ProxyRuleInput>) => request<ProxyRuleSummary>(`/proxy-rules/${id}`, { method: 'PUT', body: JSON.stringify(rule) }),
   remove: (id: string) => request<{ ok: boolean }>(`/proxy-rules/${id}`, { method: 'DELETE' }),
+};
+
+// WebChat API
+export const webchat = {
+  messages: (botId: string, limit?: number) =>
+    request<Message[]>(`/bots/${botId}/webchat/messages${limit ? `?limit=${limit}` : ''}`),
+  connect: async (
+    botId: string,
+    handlers: {
+      onEvent: (event: WebChatSocketEvent) => void;
+      onOpen?: () => void;
+      onClose?: () => void;
+      onError?: (err: Event) => void;
+    },
+  ): Promise<WebSocket> => {
+    const token = await getAuthToken();
+    const socket = new WebSocket(
+      resolveWebSocketUrl(`/bots/${botId}/webchat/ws`, { token }),
+    );
+
+    socket.onopen = () => handlers.onOpen?.();
+    socket.onclose = () => handlers.onClose?.();
+    socket.onerror = (err) => handlers.onError?.(err);
+    socket.onmessage = (event) => {
+      try {
+        handlers.onEvent(JSON.parse(event.data) as WebChatSocketEvent);
+      } catch {
+        // Ignore malformed frames.
+      }
+    };
+
+    return socket;
+  },
+  send: (socket: WebSocket, content: string, clientMessageId?: string) => {
+    socket.send(
+      JSON.stringify({
+        type: 'send_message',
+        content,
+        ...(clientMessageId ? { clientMessageId } : {}),
+      }),
+    );
+  },
 };
 
 export const memory = {

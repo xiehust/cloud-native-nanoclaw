@@ -386,6 +386,14 @@
       "fillCredentials": "Enter your ClientId and ClientSecret below:"
     }
   },
+  "webchat": {
+    "title": "Chat",
+    "empty": "Send a message to start chatting with your bot.",
+    "placeholder": "Type a message...",
+    "hint": "Press Enter to send, Shift+Enter for new line",
+    "you": "You",
+    "openChat": "Chat"
+  },
   "messages": {
     "title": "Messages",
     "noMessages": "No messages yet"

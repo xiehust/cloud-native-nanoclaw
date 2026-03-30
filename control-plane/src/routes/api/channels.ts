@@ -28,7 +28,7 @@ import type { ChannelConfig, CreateChannelRequest } from '@clawbot/shared';
 const secrets = new SecretsManagerClient({ region: config.region });
 
 const createChannelSchema = z.object({
-  channelType: z.enum(['telegram', 'discord', 'slack', 'whatsapp', 'feishu', 'dingtalk']),
+  channelType: z.enum(['telegram', 'discord', 'slack', 'whatsapp', 'feishu', 'dingtalk', 'web']),
   credentials: z.record(z.string(), z.string()),
 });
 
@@ -102,12 +102,16 @@ export const channelsRoutes: FastifyPluginAsync = async (app) => {
       verifiedInfo.applicationId ||
       verifiedInfo.botUserId ||
       verifiedInfo.botOpenId ||
+      verifiedInfo.webChannelId ||
       'default';
 
     // 5. Build webhook URL
     const webhookBase =
       config.webhookBaseUrl || `https://${config.stage}.nanoclawbot.ai`;
-    const webhookUrl = `${webhookBase}/webhook/${body.channelType}/${botId}`;
+    const webhookUrl =
+      body.channelType === 'web'
+        ? `${webhookBase}/api/bots/${botId}/webchat/ws`
+        : `${webhookBase}/webhook/${body.channelType}/${botId}`;
 
     // 6. Register webhook with channel provider
     let autoConnected = false;
@@ -126,6 +130,9 @@ export const channelsRoutes: FastifyPluginAsync = async (app) => {
       autoConnected = true;
     } else if (body.channelType === 'dingtalk') {
       // Stream mode — auto-connect via gateway manager
+      autoConnected = true;
+    } else if (body.channelType === 'web') {
+      // Internal websocket channel — no external webhook setup needed.
       autoConnected = true;
     } else {
       // Discord, Slack, WhatsApp require manual webhook configuration

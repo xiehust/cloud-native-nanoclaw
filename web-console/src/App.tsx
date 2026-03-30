@@ -5,6 +5,7 @@ import Dashboard from './pages/Dashboard';
 import BotDetail from './pages/BotDetail';
 import ChannelSetup from './pages/ChannelSetup';
 import Messages from './pages/Messages';
+import WebChat from './pages/WebChat';
 import MemoryEditor from './pages/MemoryEditor';
 import Settings from './pages/Settings';
 import AdminPage from './pages/admin/AdminPage';
@@ -31,6 +32,7 @@ export default function App() {
         <Route path="/bots/:botId" element={<BotDetail />} />
         <Route path="/bots/:botId/channels/new" element={<ChannelSetup />} />
         <Route path="/bots/:botId/channels/setup" element={<ChannelSetup />} />
+        <Route path="/bots/:botId/chat" element={<WebChat />} />
         <Route path="/bots/:botId/messages/:groupJid" element={<Messages />} />
         <Route path="/bots/:botId/groups/:groupJid/memory" element={<MemoryEditor />} />
         <Route path="/memory" element={<MemoryEditor />} />

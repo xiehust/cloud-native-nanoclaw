@@ -55,6 +55,9 @@ async function buildContext(): Promise<McpToolContext> {
     groupJid: process.env.CLAWBOT_GROUP_JID!,
     userId,
     channelType: (process.env.CLAWBOT_CHANNEL_TYPE || 'telegram') as ChannelType,
+    ...(process.env.CLAWBOT_WEB_SESSION_ID
+      ? { replyContext: { webSessionId: process.env.CLAWBOT_WEB_SESSION_ID } }
+      : {}),
     clients,
   };
   cachedContext = ctx;

@@ -400,6 +400,7 @@ async function runAgentQuery(params: QueryParams): Promise<InvocationResult> {
               CLAWBOT_GROUP_JID: params.groupJid,
               CLAWBOT_USER_ID: params.userId,
               CLAWBOT_CHANNEL_TYPE: payload.channelType,
+              CLAWBOT_WEB_SESSION_ID: payload.replyContext?.webSessionId || '',
               // Scoped credentials are inherited from process.env
               // (the runtime's IAM role can assume the scoped role)
               SCOPED_ROLE_ARN: process.env.SCOPED_ROLE_ARN || '',

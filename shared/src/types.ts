@@ -119,7 +119,7 @@ export interface ToolWhitelistConfig {
 // --- Channel (DynamoDB: channels table, PK=botId, SK=channelType#channelId) ---
 // Evolved from NanoClaw's Channel interface — now BYOK credentials
 
-export type ChannelType = 'telegram' | 'discord' | 'slack' | 'whatsapp' | 'feishu' | 'dingtalk';
+export type ChannelType = 'telegram' | 'discord' | 'slack' | 'whatsapp' | 'feishu' | 'dingtalk' | 'web';
 
 export interface ChannelConfig {
   botId: string;
@@ -223,6 +223,7 @@ export interface SqsReplyContext {
   dingtalkSessionWebhook?: string;
   dingtalkIsGroup?: boolean;
   dingtalkSenderStaffId?: string;
+  webSessionId?: string;
 }
 
 export interface SqsInboundPayload {
@@ -271,6 +272,7 @@ export interface InvocationPayload {
   isScheduledTask?: boolean;
   isGroupChat?: boolean;
   maxTurns?: number;
+  replyContext?: SqsReplyContext;
   /** Feishu/Lark credentials + tool config (present when channelType is 'feishu') */
   feishu?: FeishuInvocationConfig;
   /** When true, agent runtime should NOT resume existing session (model/provider changed) */
@@ -334,6 +336,7 @@ export interface SqsTextReplyPayload {
   channelType: ChannelType;
   text: string;
   timestamp: string;
+  replyContext?: SqsReplyContext;
 }
 
 export interface SqsFileReplyPayload {
@@ -347,6 +350,7 @@ export interface SqsFileReplyPayload {
   size: number;
   caption?: string;
   timestamp: string;
+  replyContext?: SqsReplyContext;
 }
 
 export type SqsReplyPayload = SqsTextReplyPayload | SqsFileReplyPayload;

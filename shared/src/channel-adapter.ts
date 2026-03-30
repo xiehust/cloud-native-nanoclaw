@@ -11,6 +11,8 @@ export interface ReplyContext {
   botId: string;
   groupJid: string;
   channelType: ChannelType;
+  // Web channel-specific
+  webSessionId?: string;
   // Discord-specific
   discordChannelId?: string;
   discordInteractionToken?: string; // slash command callback token (15min TTL)

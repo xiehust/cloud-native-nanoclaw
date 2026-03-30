@@ -7,6 +7,7 @@ import * as slack from './slack.js';
 import * as whatsapp from './whatsapp.js';
 import * as feishu from './feishu.js';
 import * as dingtalk from './dingtalk.js';
+import * as webchat from './webchat.js';
 import type { ChannelType } from '@clawbot/shared';
 
 export async function sendChannelMessage(
@@ -28,6 +29,9 @@ export async function sendChannelMessage(
       return feishu.sendFeishuMessage(credentials.appId, credentials.appSecret, chatId, text, (credentials.domain as feishu.FeishuDomain) || 'feishu');
     case 'dingtalk':
       throw new Error('DingTalk messages must be sent via DingTalkAdapter.sendReply(), not sendChannelMessage()');
+    case 'web':
+      // Web channel replies are handled by the WebChatAdapter via websocket sessions.
+      throw new Error('Web channel messages must be sent via WebChatAdapter.sendReply(), not sendChannelMessage()');
 
     default:
       throw new Error(`Unsupported channel type: ${channelType}`);
@@ -73,6 +77,10 @@ export async function verifyChannelCredentials(
     case 'dingtalk': {
       const result = await dingtalk.verifyCredentials(credentials.clientId, credentials.clientSecret);
       return { robotId: result.robotId, robotName: result.robotName };
+    }
+    case 'web': {
+      const info = await webchat.verifyCredentials(credentials);
+      return { webChannelId: info.webChannelId };
     }
     default:
       throw new Error(`Unsupported channel type: ${channelType}`);
