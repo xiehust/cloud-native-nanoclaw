@@ -23,12 +23,13 @@ import { verifyChannelCredentials } from '../../channels/index.js';
 import * as telegram from '../../channels/telegram.js';
 import { getFeishuGatewayManager } from '../../feishu/gateway-manager.js';
 import { getDingTalkGatewayManager } from '../../dingtalk/gateway-manager.js';
+import { getWebGatewayManager } from '../../web/gateway-manager.js';
 import type { ChannelConfig, CreateChannelRequest } from '@clawbot/shared';
 
 const secrets = new SecretsManagerClient({ region: config.region });
 
 const createChannelSchema = z.object({
-  channelType: z.enum(['telegram', 'discord', 'slack', 'whatsapp', 'feishu', 'dingtalk']),
+  channelType: z.enum(['telegram', 'discord', 'slack', 'whatsapp', 'feishu', 'dingtalk', 'web']),
   credentials: z.record(z.string(), z.string()),
 });
 
@@ -64,6 +65,57 @@ export const channelsRoutes: FastifyPluginAsync = async (app) => {
     const body = createChannelSchema.parse(
       request.body as CreateChannelRequest,
     );
+
+    // Web channels: auto-generate credentials (no user-supplied tokens needed)
+    if (body.channelType === 'web') {
+      const clientId = crypto.randomUUID();
+      const clientSecret = crypto.randomUUID().replace(/-/g, '') + crypto.randomUUID().replace(/-/g, '');
+
+      const secretName = `nanoclawbot/${config.stage}/${botId}/web`;
+      const secretResult = await secrets.send(
+        new CreateSecretCommand({
+          Name: secretName,
+          SecretString: JSON.stringify({ clientId, clientSecret }),
+          Description: `NanoClawBot web credentials for bot ${botId}`,
+        }),
+      );
+
+      const channelId = clientId;
+      const channel: ChannelConfig = {
+        botId,
+        channelType: 'web',
+        channelId,
+        credentialSecretArn: secretResult.ARN || secretName,
+        webhookUrl: '', // Web uses WebSocket, not webhooks
+        status: 'connected',
+        healthStatus: 'healthy',
+        consecutiveFailures: 0,
+        config: { clientId, verified: 'true' },
+        createdAt: new Date().toISOString(),
+      };
+
+      await createChannel(channel);
+
+      // Auto-activate bot when first channel is connected
+      if (bot.status === 'created') {
+        await updateBot(request.userId, botId, { status: 'active' });
+      }
+
+      // Signal the web gateway manager to add this channel incrementally
+      const webGw = getWebGatewayManager();
+      if (webGw) {
+        webGw.addChannel(channelId).catch((err) => {
+          request.log.error({ err, botId }, 'Failed to add web channel to gateway');
+        });
+      }
+
+      return reply.status(201).send({
+        ...channel,
+        credentialSecretArn: '[redacted]',
+        clientId,
+        clientSecret, // Only returned once at creation time
+      });
+    }
 
     // 1. Verify credentials are valid by calling the channel API
     let verifiedInfo: Record<string, string>;
@@ -348,6 +400,16 @@ export const channelsRoutes: FastifyPluginAsync = async (app) => {
         const dingtalkGw = getDingTalkGatewayManager();
         if (dingtalkGw) {
           dingtalkGw.removeBot(botId);
+        }
+      }
+
+      // Signal the web gateway manager to remove this channel incrementally
+      if (channelType === 'web') {
+        const webGw = getWebGatewayManager();
+        if (webGw) {
+          webGw.removeChannel(channel.channelId).catch((err) => {
+            request.log.error({ err, botId }, 'Failed to remove web channel from gateway');
+          });
         }
       }
 

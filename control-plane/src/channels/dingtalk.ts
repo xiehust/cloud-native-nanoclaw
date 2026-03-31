@@ -462,6 +462,14 @@ export async function downloadMedia(
   const contentType = fileResp.headers.get('content-type') || 'application/octet-stream';
   const data = await fileResp.arrayBuffer();
 
+  // Post-read size guard: Content-Length may be absent (e.g. presigned URL redirects),
+  // so validate actual bytes read to prevent unbounded memory consumption.
+  if (data.byteLength > MAX_DOWNLOAD_SIZE) {
+    throw new Error(
+      `DingTalk media too large: ${(data.byteLength / 1024 / 1024).toFixed(1)} MB actual (max ${MAX_DOWNLOAD_SIZE / 1024 / 1024} MB)`,
+    );
+  }
+
   // Infer content type from URL if response type is generic
   let resolvedContentType = contentType;
   if (contentType === 'application/octet-stream' || contentType === 'binary/octet-stream') {

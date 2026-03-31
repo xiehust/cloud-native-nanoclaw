@@ -28,6 +28,8 @@ export async function sendChannelMessage(
       return feishu.sendFeishuMessage(credentials.appId, credentials.appSecret, chatId, text, (credentials.domain as feishu.FeishuDomain) || 'feishu');
     case 'dingtalk':
       throw new Error('DingTalk messages must be sent via DingTalkAdapter.sendReply(), not sendChannelMessage()');
+    case 'web':
+      throw new Error('Web messages must be sent via WebAdapter.sendReply(), not sendChannelMessage()');
 
     default:
       throw new Error(`Unsupported channel type: ${channelType}`);
@@ -73,6 +75,12 @@ export async function verifyChannelCredentials(
     case 'dingtalk': {
       const result = await dingtalk.verifyCredentials(credentials.clientId, credentials.clientSecret);
       return { robotId: result.robotId, robotName: result.robotName };
+    }
+    case 'web': {
+      // Web channels auto-generate credentials, so verification is just a validity check
+      const { clientId, clientSecret } = credentials;
+      if (!clientId || !clientSecret) throw new Error('Missing clientId or clientSecret');
+      return { clientId, verified: 'true' };
     }
     default:
       throw new Error(`Unsupported channel type: ${channelType}`);

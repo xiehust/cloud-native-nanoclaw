@@ -119,7 +119,7 @@ export interface ToolWhitelistConfig {
 // --- Channel (DynamoDB: channels table, PK=botId, SK=channelType#channelId) ---
 // Evolved from NanoClaw's Channel interface — now BYOK credentials
 
-export type ChannelType = 'telegram' | 'discord' | 'slack' | 'whatsapp' | 'feishu' | 'dingtalk';
+export type ChannelType = 'telegram' | 'discord' | 'slack' | 'whatsapp' | 'feishu' | 'dingtalk' | 'web';
 
 export interface ChannelConfig {
   botId: string;
@@ -223,6 +223,9 @@ export interface SqsReplyContext {
   dingtalkSessionWebhook?: string;
   dingtalkIsGroup?: boolean;
   dingtalkSenderStaffId?: string;
+  // Web channel-specific
+  webChannelId?: string;
+  webUserId?: string;
 }
 
 export interface SqsInboundPayload {
@@ -334,6 +337,7 @@ export interface SqsTextReplyPayload {
   channelType: ChannelType;
   text: string;
   timestamp: string;
+  replyContext?: SqsReplyContext;
 }
 
 export interface SqsFileReplyPayload {
@@ -347,6 +351,7 @@ export interface SqsFileReplyPayload {
   size: number;
   caption?: string;
   timestamp: string;
+  replyContext?: SqsReplyContext;
 }
 
 export type SqsReplyPayload = SqsTextReplyPayload | SqsFileReplyPayload;

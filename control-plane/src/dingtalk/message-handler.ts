@@ -347,8 +347,12 @@ export async function handleDingTalkMessage(
       groupJid,
       messageId: msg.messageId,
       contentLength: content.length,
+      isGroup,
+      conversationType: data.conversationType,
+      msgtype: data.msgtype,
+      hasAttachments: attachments.length > 0,
     },
-    'DingTalk message processing',
+    'DingTalk message triggered, dispatching to SQS',
   );
 
   // Send to SQS FIFO for agent dispatch

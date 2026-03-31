@@ -65,8 +65,9 @@ ENV PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium
 ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
 
-# Install claude-code and agent-browser globally, then install browser
-RUN npm install -g @anthropic-ai/claude-code agent-browser docx \
+# Install claude-code and agent-browser globally (CLI tools only).
+# Note: docx is a library, not a CLI — installed via package.json dependencies.
+RUN npm install -g @anthropic-ai/claude-code agent-browser \
     && agent-browser install || true
 
 # App setup
