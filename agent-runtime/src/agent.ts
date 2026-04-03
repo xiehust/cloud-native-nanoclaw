@@ -424,31 +424,15 @@ async function runAgentQuery(params: QueryParams): Promise<InvocationResult> {
     logger.info({ extraDirs }, 'Additional directories discovered');
   }
 
-  // Diagnostic: verify claude-code CLI and capture stderr on test run
-  try {
-    const cliVersion = execSync('claude --version 2>&1', { timeout: 5000, encoding: 'utf-8' }).trim();
-    logger.info({ cliVersion, model: payload.model || DEFAULT_MODEL, provider: payload.modelProvider, providerType: payload.providerType }, 'Claude CLI check OK');
-  } catch (diagErr) {
-    logger.error({ err: diagErr instanceof Error ? diagErr.message : String(diagErr) }, 'Claude CLI check FAILED');
-  }
-  // Log key SDK env vars (mask secrets)
-  const safeEnv: Record<string, string> = {};
-  for (const [k, v] of Object.entries(sdkEnv)) {
-    if (k.includes('KEY') || k.includes('SECRET') || k.includes('TOKEN')) safeEnv[k] = '***';
-    else if (k === 'ANTHROPIC_BASE_URL' || k === 'CLAUDE_CODE_USE_BEDROCK' || k === 'AWS_REGION' || k === 'CLAUDE_AGENT_SDK_VERSION') safeEnv[k] = v || '';
-  }
-  logger.info({ safeEnv }, 'SDK env subset');
-  // Try a direct claude invocation to capture stderr
-  try {
-    const testEnv = { ...process.env, ...sdkEnv };
-    const testResult = execSync('claude -p "test" --output-format json --max-turns 1 2>&1 || true', {
-      timeout: 15000, encoding: 'utf-8', env: testEnv, cwd: '/workspace/group',
-    });
-    logger.info({ testOutput: testResult.slice(0, 2000) }, 'Claude direct test');
-  } catch (testErr) {
-    const msg = testErr instanceof Error ? (testErr as { stderr?: string; stdout?: string }).stderr || (testErr as { stdout?: string }).stdout || testErr.message : String(testErr);
-    logger.error({ testError: typeof msg === 'string' ? msg.slice(0, 2000) : msg }, 'Claude direct test FAILED');
-  }
+  // Diagnostic: log model/provider/env (lightweight, no blocking calls)
+  logger.info({
+    model: payload.model || DEFAULT_MODEL,
+    provider: payload.modelProvider,
+    providerType: payload.providerType,
+    bedrockMode: sdkEnv.CLAUDE_CODE_USE_BEDROCK,
+    baseUrl: sdkEnv.ANTHROPIC_BASE_URL,
+    hasApiKey: !!sdkEnv.ANTHROPIC_API_KEY,
+  }, 'Query config');
 
   try {
     for await (const message of query({
