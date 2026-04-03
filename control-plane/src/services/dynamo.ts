@@ -15,8 +15,10 @@ import { z } from 'zod';
 import { config } from '../config.js';
 import type {
   Bot,
+  BotMcpConfig,
   ChannelConfig,
   Group,
+  McpServer,
   Message,
   PlanQuotas,
   Provider,
@@ -1230,4 +1232,177 @@ export async function deleteSkill(skillId: string): Promise<void> {
       Key: { skillId },
     }),
   );
+}
+
+// ── MCP Servers (global, admin-managed) ──────────────────────────────
+
+const mcpServerIdSchema = z.string().min(1);
+
+export async function createMcpServer(server: McpServer): Promise<void> {
+  await client.send(
+    new PutCommand({
+      TableName: config.tables.mcpServers,
+      Item: server,
+      ConditionExpression: 'attribute_not_exists(mcpServerId)',
+    }),
+  );
+}
+
+export async function getMcpServer(mcpServerId: string): Promise<McpServer | null> {
+  mcpServerIdSchema.parse(mcpServerId);
+  const result = await client.send(
+    new GetCommand({
+      TableName: config.tables.mcpServers,
+      Key: { mcpServerId },
+    }),
+  );
+  return (result.Item as McpServer) ?? null;
+}
+
+export async function listMcpServers(status?: string): Promise<McpServer[]> {
+  const items: McpServer[] = [];
+  let lastKey: Record<string, unknown> | undefined;
+  do {
+    const result = await client.send(
+      new ScanCommand({
+        TableName: config.tables.mcpServers,
+        ExclusiveStartKey: lastKey,
+        ...(status && {
+          FilterExpression: '#status = :status',
+          ExpressionAttributeNames: { '#status': 'status' },
+          ExpressionAttributeValues: { ':status': status },
+        }),
+      }),
+    );
+    if (result.Items) items.push(...(result.Items as McpServer[]));
+    lastKey = result.LastEvaluatedKey;
+  } while (lastKey);
+  return items;
+}
+
+export async function updateMcpServer(
+  mcpServerId: string,
+  updates: Partial<Omit<McpServer, 'mcpServerId' | 'createdAt' | 'createdBy'>>,
+): Promise<void> {
+  mcpServerIdSchema.parse(mcpServerId);
+
+  const expressions: string[] = [];
+  const names: Record<string, string> = {};
+  const values: Record<string, unknown> = {};
+
+  const allowedFields = [
+    'name', 'description', 'version', 'type', 'status',
+    'command', 'args', 'npmPackages', 'url', 'headers',
+    'envVars', 'tools',
+  ] as const;
+
+  for (const field of allowedFields) {
+    if ((updates as Record<string, unknown>)[field] !== undefined) {
+      expressions.push(`#${field} = :${field}`);
+      names[`#${field}`] = field;
+      values[`:${field}`] = (updates as Record<string, unknown>)[field];
+    }
+  }
+
+  if (expressions.length === 0) return;
+
+  expressions.push('#updatedAt = :updatedAt');
+  names['#updatedAt'] = 'updatedAt';
+  values[':updatedAt'] = new Date().toISOString();
+
+  await client.send(
+    new UpdateCommand({
+      TableName: config.tables.mcpServers,
+      Key: { mcpServerId },
+      UpdateExpression: `SET ${expressions.join(', ')}`,
+      ExpressionAttributeNames: names,
+      ExpressionAttributeValues: values,
+    }),
+  );
+}
+
+export async function deleteMcpServer(mcpServerId: string): Promise<void> {
+  mcpServerIdSchema.parse(mcpServerId);
+  await client.send(
+    new DeleteCommand({
+      TableName: config.tables.mcpServers,
+      Key: { mcpServerId },
+    }),
+  );
+}
+
+// ── Bot MCP Configs (per-bot enablement) ─────────────────────────────
+
+export async function putBotMcpConfig(cfg: BotMcpConfig): Promise<void> {
+  await client.send(
+    new PutCommand({
+      TableName: config.tables.botMcpConfigs,
+      Item: cfg,
+    }),
+  );
+}
+
+export async function getBotMcpConfig(
+  botId: string,
+  mcpServerId: string,
+): Promise<BotMcpConfig | null> {
+  const result = await client.send(
+    new GetCommand({
+      TableName: config.tables.botMcpConfigs,
+      Key: { botId, mcpServerId },
+    }),
+  );
+  return (result.Item as BotMcpConfig) ?? null;
+}
+
+export async function listBotMcpConfigs(botId: string): Promise<BotMcpConfig[]> {
+  const items: BotMcpConfig[] = [];
+  let lastKey: Record<string, unknown> | undefined;
+  do {
+    const result = await client.send(
+      new QueryCommand({
+        TableName: config.tables.botMcpConfigs,
+        KeyConditionExpression: 'botId = :botId',
+        ExpressionAttributeValues: { ':botId': botId },
+        ExclusiveStartKey: lastKey,
+      }),
+    );
+    if (result.Items) items.push(...(result.Items as BotMcpConfig[]));
+    lastKey = result.LastEvaluatedKey;
+  } while (lastKey);
+  return items;
+}
+
+export async function deleteBotMcpConfig(
+  botId: string,
+  mcpServerId: string,
+): Promise<void> {
+  await client.send(
+    new DeleteCommand({
+      TableName: config.tables.botMcpConfigs,
+      Key: { botId, mcpServerId },
+    }),
+  );
+}
+
+/** Delete all bot MCP configs referencing a given mcpServerId (for admin cascade delete). */
+export async function deleteBotMcpConfigsByServer(mcpServerId: string): Promise<void> {
+  const items: Array<{ botId: string; mcpServerId: string }> = [];
+  let lastKey: Record<string, unknown> | undefined;
+  do {
+    const result = await client.send(
+      new ScanCommand({
+        TableName: config.tables.botMcpConfigs,
+        FilterExpression: 'mcpServerId = :id',
+        ExpressionAttributeValues: { ':id': mcpServerId },
+        ExclusiveStartKey: lastKey,
+      }),
+    );
+    if (result.Items) items.push(...(result.Items as Array<{ botId: string; mcpServerId: string }>));
+    lastKey = result.LastEvaluatedKey;
+  } while (lastKey);
+
+  for (const item of items) {
+    await deleteBotMcpConfig(item.botId, item.mcpServerId);
+  }
 }

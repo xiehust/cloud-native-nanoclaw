@@ -28,6 +28,8 @@ export const config = {
     sessions: process.env.SESSIONS_TABLE || 'nanoclawbot-dev-sessions',
     providers: process.env.PROVIDERS_TABLE || 'nanoclawbot-dev-providers',
     skills: process.env.SKILLS_TABLE || 'nanoclawbot-dev-skills',
+    mcpServers: process.env.MCP_SERVERS_TABLE || 'nanoclawbot-dev-mcp-servers',
+    botMcpConfigs: process.env.BOT_MCP_CONFIGS_TABLE || 'nanoclawbot-dev-bot-mcp-configs',
   },
 
   // SQS queue URLs (match CDK: MESSAGE_QUEUE_URL, REPLY_QUEUE_URL)
