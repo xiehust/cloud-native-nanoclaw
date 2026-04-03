@@ -468,6 +468,7 @@ export async function updateBot(
     'containerConfig',
     'toolWhitelist',
     'skills',
+    'mcpServers',
   ] as const;
 
   for (const field of allowedFields) {
@@ -1385,9 +1386,10 @@ export async function deleteBotMcpConfig(
   );
 }
 
-/** Delete all bot MCP configs referencing a given mcpServerId (for admin cascade delete). */
-export async function deleteBotMcpConfigsByServer(mcpServerId: string): Promise<void> {
-  const items: Array<{ botId: string; mcpServerId: string }> = [];
+/** Delete all bot MCP configs referencing a given mcpServerId (for admin cascade delete).
+ *  Returns the deleted configs so callers can clean up secrets and bot.mcpServers arrays. */
+export async function deleteBotMcpConfigsByServer(mcpServerId: string): Promise<BotMcpConfig[]> {
+  const items: BotMcpConfig[] = [];
   let lastKey: Record<string, unknown> | undefined;
   do {
     const result = await client.send(
@@ -1398,11 +1400,12 @@ export async function deleteBotMcpConfigsByServer(mcpServerId: string): Promise<
         ExclusiveStartKey: lastKey,
       }),
     );
-    if (result.Items) items.push(...(result.Items as Array<{ botId: string; mcpServerId: string }>));
+    if (result.Items) items.push(...(result.Items as BotMcpConfig[]));
     lastKey = result.LastEvaluatedKey;
   } while (lastKey);
 
   for (const item of items) {
     await deleteBotMcpConfig(item.botId, item.mcpServerId);
   }
+  return items;
 }

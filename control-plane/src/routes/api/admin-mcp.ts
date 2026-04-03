@@ -8,8 +8,10 @@ import { z } from 'zod';
 import { ulid } from 'ulid';
 import {
   createMcpServer,
+  getBotById,
   getMcpServer,
   listMcpServers,
+  updateBot,
   updateMcpServer,
   deleteMcpServer,
   deleteBotMcpConfigsByServer,
@@ -137,8 +139,23 @@ export const adminMcpRoutes: FastifyPluginAsync = async (app) => {
         return reply.status(404).send({ error: 'MCP server not found' });
       }
 
-      // Cascade: remove all bot-level configs referencing this server
-      await deleteBotMcpConfigsByServer(request.params.mcpServerId);
+      // Cascade: remove all bot-level configs and clean up bot.mcpServers arrays
+      const deletedConfigs = await deleteBotMcpConfigsByServer(request.params.mcpServerId);
+
+      // Best-effort: remove mcpServerId from each affected bot's mcpServers array
+      const affectedBotIds = [...new Set(deletedConfigs.map((c) => c.botId))];
+      for (const botId of affectedBotIds) {
+        try {
+          const bot = await getBotById(botId);
+          if (bot?.mcpServers) {
+            const updated = bot.mcpServers.filter((id) => id !== request.params.mcpServerId);
+            await updateBot(bot.userId, botId, { mcpServers: updated });
+          }
+        } catch {
+          // Best-effort — don't fail the admin delete
+        }
+      }
+
       await deleteMcpServer(request.params.mcpServerId);
       return reply.status(204).send();
     },

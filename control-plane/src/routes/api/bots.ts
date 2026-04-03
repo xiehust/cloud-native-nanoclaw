@@ -267,7 +267,6 @@ export const botsRoutes: FastifyPluginAsync = async (app) => {
       ]);
 
       const enabledSet = new Set(bot.mcpServers || []);
-      const configMap = new Map(botConfigs.map((c) => [c.mcpServerId, c]));
 
       // Platform servers with enabled flag
       const platformEntries = allPlatform.map((s) => ({

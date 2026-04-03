@@ -57,7 +57,9 @@ async function installMcpPackages(
   for (const cfg of configs) {
     if (cfg.type === 'stdio' && cfg.npmPackages?.length) {
       for (const pkg of cfg.npmPackages) {
-        const pkgName = pkg.startsWith('@') ? pkg : pkg.split('/').pop()!;
+        // Strip version suffix (e.g., "@1.2.3", "^2.0") for directory check
+        const basePkg = pkg.replace(/@[\d^~>=<].*$/, '');
+        const pkgName = basePkg.startsWith('@') ? basePkg : basePkg.split('/').pop()!;
         const checkPath = path.join(MCP_PACKAGES_DIR, 'node_modules', pkgName);
         if (!fs.existsSync(checkPath)) {
           packagesToInstall.push(pkg);
@@ -79,6 +81,13 @@ async function installMcpPackages(
     logger.info('MCP npm packages installed successfully');
   } catch (err) {
     logger.error({ err }, 'Failed to install MCP npm packages');
+    // Remove configs whose packages failed to install
+    const failedPkgs = new Set(packagesToInstall);
+    configs.splice(0, configs.length, ...configs.filter((cfg) => {
+      if (cfg.type !== 'stdio' || !cfg.npmPackages?.length) return true;
+      return !cfg.npmPackages.some((p) => failedPkgs.has(p));
+    }));
+    logger.warn({ removedCount: configs.length }, 'Filtered out MCP configs with failed packages');
   }
 }
 
