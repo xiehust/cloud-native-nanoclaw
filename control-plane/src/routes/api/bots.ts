@@ -12,11 +12,18 @@ import {
   getUser,
   listBots,
   listSkills,
+  listMcpServers,
+  getMcpServer,
+  putBotMcpConfig,
+  listBotMcpConfigs,
+  getBotMcpConfig,
+  deleteBotMcpConfig,
   updateBot,
   deleteBot,
 } from '../../services/dynamo.js';
 import { botCache } from '../../services/cache.js';
-import type { Bot, CreateBotRequest, UpdateBotRequest } from '@clawbot/shared';
+import { putMcpSecret } from '../../services/secrets.js';
+import type { Bot, BotMcpConfig, CreateBotRequest, UpdateBotRequest } from '@clawbot/shared';
 
 const createBotSchema = z.object({
   name: z.string().min(1).max(100),
@@ -240,6 +247,296 @@ export const botsRoutes: FastifyPluginAsync = async (app) => {
       await updateBot(request.userId, request.params.botId, { skills });
       botCache.delete(request.params.botId);
       return { ok: true, skills };
+    },
+  );
+
+  // ── MCP Server Management ────────────────────────────────────────────
+
+  // GET /:botId/mcp-servers — List all available MCP servers with enabled state
+  app.get<{ Params: { botId: string } }>(
+    '/:botId/mcp-servers',
+    async (request, reply) => {
+      const bot = await getBot(request.userId, request.params.botId);
+      if (!bot || bot.status === 'deleted') {
+        return reply.status(404).send({ error: 'Bot not found' });
+      }
+
+      const [allPlatform, botConfigs] = await Promise.all([
+        listMcpServers('active'),
+        listBotMcpConfigs(request.params.botId),
+      ]);
+
+      const enabledSet = new Set(bot.mcpServers || []);
+      const configMap = new Map(botConfigs.map((c) => [c.mcpServerId, c]));
+
+      // Platform servers with enabled flag
+      const platformEntries = allPlatform.map((s) => ({
+        mcpServerId: s.mcpServerId,
+        name: s.name,
+        type: s.type,
+        description: s.description,
+        version: s.version,
+        tools: s.tools,
+        envVars: s.envVars,
+        enabled: enabledSet.has(s.mcpServerId),
+        source: 'platform' as const,
+      }));
+
+      // Custom servers (always shown, always enabled)
+      const customEntries = botConfigs
+        .filter((c) => c.source === 'custom' && c.customConfig)
+        .map((c) => ({
+          mcpServerId: c.mcpServerId,
+          name: c.customConfig!.name,
+          type: c.customConfig!.type,
+          description: c.customConfig!.description,
+          version: c.customConfig!.version,
+          tools: c.customConfig!.tools,
+          envVars: c.customConfig!.envVars,
+          enabled: true,
+          source: 'custom' as const,
+        }));
+
+      return { mcpServers: [...platformEntries, ...customEntries] };
+    },
+  );
+
+  // PUT /:botId/mcp-servers — Update enabled platform MCP server list
+  app.put<{ Params: { botId: string } }>(
+    '/:botId/mcp-servers',
+    async (request, reply) => {
+      const { mcpServers } = z.object({
+        mcpServers: z.array(z.string().min(1)).max(20),
+      }).parse(request.body);
+
+      const bot = await getBot(request.userId, request.params.botId);
+      if (!bot || bot.status === 'deleted') {
+        return reply.status(404).send({ error: 'Bot not found' });
+      }
+
+      // Validate all IDs exist and are active
+      const resolved = await Promise.all(mcpServers.map((id) => getMcpServer(id)));
+      for (let i = 0; i < resolved.length; i++) {
+        if (!resolved[i] || resolved[i]!.status !== 'active') {
+          return reply.status(400).send({ error: `MCP server ${mcpServers[i]} not found or not active` });
+        }
+      }
+
+      // Determine which to add/remove
+      const oldSet = new Set(bot.mcpServers || []);
+      const newSet = new Set(mcpServers);
+      const now = new Date().toISOString();
+
+      // Create BotMcpConfig for newly enabled platform servers
+      for (const id of mcpServers) {
+        if (!oldSet.has(id)) {
+          await putBotMcpConfig({
+            botId: request.params.botId,
+            mcpServerId: id,
+            source: 'platform',
+            enabled: true,
+            createdAt: now,
+            updatedAt: now,
+          });
+        }
+      }
+
+      // Delete BotMcpConfig for removed platform servers
+      for (const id of oldSet) {
+        if (!newSet.has(id)) {
+          const cfg = await getBotMcpConfig(request.params.botId, id);
+          if (cfg && cfg.source === 'platform') {
+            await deleteBotMcpConfig(request.params.botId, id);
+          }
+        }
+      }
+
+      // Preserve custom server IDs in the mcpServers array
+      const customIds = (await listBotMcpConfigs(request.params.botId))
+        .filter((c) => c.source === 'custom')
+        .map((c) => c.mcpServerId);
+      const finalList = [...mcpServers, ...customIds];
+
+      await updateBot(request.userId, request.params.botId, { mcpServers: finalList } as Partial<Bot>);
+      botCache.delete(request.params.botId);
+      return { ok: true, mcpServers: finalList };
+    },
+  );
+
+  // POST /:botId/mcp-servers/custom — Add custom MCP server
+  app.post<{ Params: { botId: string } }>(
+    '/:botId/mcp-servers/custom',
+    async (request, reply) => {
+      const body = z.object({
+        name: z.string().min(1).max(100),
+        description: z.string().max(500).default(''),
+        version: z.string().max(50).default('1.0.0'),
+        type: z.enum(['stdio', 'sse', 'http']),
+        command: z.string().max(500).optional(),
+        args: z.array(z.string()).optional(),
+        npmPackages: z.array(z.string()).optional(),
+        url: z.string().url().optional(),
+        headers: z.record(z.string(), z.string()).optional(),
+        envVars: z.array(z.object({
+          name: z.string().min(1),
+          description: z.string().default(''),
+          required: z.boolean().default(false),
+          template: z.string().default(''),
+        })).optional(),
+        tools: z.array(z.object({
+          name: z.string().min(1),
+          description: z.string().default(''),
+        })).optional(),
+      }).parse(request.body);
+
+      const bot = await getBot(request.userId, request.params.botId);
+      if (!bot || bot.status === 'deleted') {
+        return reply.status(404).send({ error: 'Bot not found' });
+      }
+
+      if (body.type === 'stdio' && !body.command) {
+        return reply.status(400).send({ error: 'command is required for STDIO type' });
+      }
+      if ((body.type === 'sse' || body.type === 'http') && !body.url) {
+        return reply.status(400).send({ error: 'url is required for SSE/HTTP type' });
+      }
+
+      const mcpServerId = `custom-${ulid()}`;
+      const now = new Date().toISOString();
+
+      await putBotMcpConfig({
+        botId: request.params.botId,
+        mcpServerId,
+        source: 'custom',
+        enabled: true,
+        customConfig: body,
+        createdAt: now,
+        updatedAt: now,
+      });
+
+      // Add to bot.mcpServers array
+      const currentList = bot.mcpServers || [];
+      await updateBot(request.userId, request.params.botId, {
+        mcpServers: [...currentList, mcpServerId],
+      } as Partial<Bot>);
+      botCache.delete(request.params.botId);
+
+      return reply.status(201).send({
+        mcpServerId,
+        ...body,
+        enabled: true,
+        source: 'custom' as const,
+      });
+    },
+  );
+
+  // PUT /:botId/mcp-servers/custom/:mcpServerId — Update custom MCP server
+  app.put<{ Params: { botId: string; mcpServerId: string } }>(
+    '/:botId/mcp-servers/custom/:mcpServerId',
+    async (request, reply) => {
+      const bot = await getBot(request.userId, request.params.botId);
+      if (!bot || bot.status === 'deleted') {
+        return reply.status(404).send({ error: 'Bot not found' });
+      }
+
+      const existing = await getBotMcpConfig(request.params.botId, request.params.mcpServerId);
+      if (!existing || existing.source !== 'custom') {
+        return reply.status(404).send({ error: 'Custom MCP server not found' });
+      }
+
+      const body = z.object({
+        name: z.string().min(1).max(100).optional(),
+        description: z.string().max(500).optional(),
+        version: z.string().max(50).optional(),
+        type: z.enum(['stdio', 'sse', 'http']).optional(),
+        command: z.string().max(500).optional(),
+        args: z.array(z.string()).optional(),
+        npmPackages: z.array(z.string()).optional(),
+        url: z.string().url().optional(),
+        headers: z.record(z.string(), z.string()).optional(),
+        envVars: z.array(z.object({
+          name: z.string().min(1),
+          description: z.string().default(''),
+          required: z.boolean().default(false),
+          template: z.string().default(''),
+        })).optional(),
+        tools: z.array(z.object({
+          name: z.string().min(1),
+          description: z.string().default(''),
+        })).optional(),
+      }).parse(request.body);
+
+      const updatedConfig = { ...existing.customConfig, ...body };
+      await putBotMcpConfig({
+        ...existing,
+        customConfig: updatedConfig as BotMcpConfig['customConfig'],
+        updatedAt: new Date().toISOString(),
+      });
+      botCache.delete(request.params.botId);
+
+      return { mcpServerId: request.params.mcpServerId, ...updatedConfig, enabled: true, source: 'custom' };
+    },
+  );
+
+  // DELETE /:botId/mcp-servers/custom/:mcpServerId — Delete custom MCP server
+  app.delete<{ Params: { botId: string; mcpServerId: string } }>(
+    '/:botId/mcp-servers/custom/:mcpServerId',
+    async (request, reply) => {
+      const bot = await getBot(request.userId, request.params.botId);
+      if (!bot || bot.status === 'deleted') {
+        return reply.status(404).send({ error: 'Bot not found' });
+      }
+
+      const existing = await getBotMcpConfig(request.params.botId, request.params.mcpServerId);
+      if (!existing || existing.source !== 'custom') {
+        return reply.status(404).send({ error: 'Custom MCP server not found' });
+      }
+
+      await deleteBotMcpConfig(request.params.botId, request.params.mcpServerId);
+
+      // Remove from bot.mcpServers array
+      const updated = (bot.mcpServers || []).filter((id) => id !== request.params.mcpServerId);
+      await updateBot(request.userId, request.params.botId, { mcpServers: updated } as Partial<Bot>);
+      botCache.delete(request.params.botId);
+
+      return reply.status(204).send();
+    },
+  );
+
+  // PUT /:botId/mcp-servers/:mcpServerId/secrets — Save per-bot MCP secrets
+  app.put<{ Params: { botId: string; mcpServerId: string } }>(
+    '/:botId/mcp-servers/:mcpServerId/secrets',
+    async (request, reply) => {
+      const { secrets } = z.object({
+        secrets: z.record(z.string(), z.string()),
+      }).parse(request.body);
+
+      const bot = await getBot(request.userId, request.params.botId);
+      if (!bot || bot.status === 'deleted') {
+        return reply.status(404).send({ error: 'Bot not found' });
+      }
+
+      const cfg = await getBotMcpConfig(request.params.botId, request.params.mcpServerId);
+      if (!cfg) {
+        return reply.status(404).send({ error: 'MCP server config not found for this bot' });
+      }
+
+      // Write each secret to Secrets Manager, collect references
+      const secretRefs: Record<string, string> = { ...(cfg.secretRefs || {}) };
+      for (const [envVarName, value] of Object.entries(secrets)) {
+        secretRefs[envVarName] = await putMcpSecret(
+          request.userId, request.params.botId, request.params.mcpServerId, envVarName, value,
+        );
+      }
+
+      // Update BotMcpConfig with secret references
+      await putBotMcpConfig({
+        ...cfg,
+        secretRefs,
+        updatedAt: new Date().toISOString(),
+      });
+
+      return { ok: true };
     },
   );
 };

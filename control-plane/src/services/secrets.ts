@@ -127,3 +127,41 @@ export async function putProxyRules(userId: string, rules: StoredProxyRule[]): P
     }
   }
 }
+
+// ── MCP Server Secrets ─────────────────────────────────────────────────
+
+function mcpSecretId(userId: string, botId: string, mcpServerId: string, envVarName: string): string {
+  return `nanoclawbot/${config.stage}/${userId}/${botId}/mcp/${mcpServerId}/${envVarName}`;
+}
+
+export async function putMcpSecret(
+  userId: string, botId: string, mcpServerId: string, envVarName: string, value: string,
+): Promise<string> {
+  const secretId = mcpSecretId(userId, botId, mcpServerId, envVarName);
+  try {
+    await client.send(new PutSecretValueCommand({ SecretId: secretId, SecretString: value }));
+  } catch (err: unknown) {
+    if (err instanceof Error && err.name === 'ResourceNotFoundException') {
+      await client.send(new CreateSecretCommand({ Name: secretId, SecretString: value }));
+    } else {
+      throw err;
+    }
+  }
+  return secretId;
+}
+
+export async function deleteMcpSecrets(
+  userId: string, botId: string, mcpServerId: string, envVarNames: string[],
+): Promise<void> {
+  for (const name of envVarNames) {
+    try {
+      await client.send(new DeleteSecretCommand({
+        SecretId: mcpSecretId(userId, botId, mcpServerId, name),
+        ForceDeleteWithoutRecovery: true,
+      }));
+    } catch (err: unknown) {
+      if (err instanceof Error && err.name === 'ResourceNotFoundException') continue;
+      throw err;
+    }
+  }
+}
