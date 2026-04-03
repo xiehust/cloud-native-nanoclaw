@@ -366,4 +366,8 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
   // Register skills sub-routes (inherits admin guard)
   const { adminSkillsRoutes } = await import('./admin-skills.js');
   await app.register(adminSkillsRoutes, { prefix: '/skills' });
+
+  // Register MCP server sub-routes (inherits admin guard)
+  const { adminMcpRoutes } = await import('./admin-mcp.js');
+  await app.register(adminMcpRoutes, { prefix: '/mcp-servers' });
 };
