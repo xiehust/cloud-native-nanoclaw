@@ -8,11 +8,17 @@ import {
   InvokeAgentRuntimeCommand,
 } from '@aws-sdk/client-bedrock-agentcore';
 import { formatOutbound } from '@clawbot/shared';
+import {
+  SecretsManagerClient,
+  GetSecretValueCommand,
+} from '@aws-sdk/client-secrets-manager';
 import type {
   ChannelType,
   FeishuInvocationConfig,
   InvocationPayload,
   InvocationResult,
+  McpEnvVar,
+  ResolvedMcpConfig,
   SqsInboundPayload,
   SqsPayload,
   SqsTaskPayload,
@@ -34,6 +40,8 @@ import {
   getChannelsByBot,
   getProvider,
   getSkill,
+  listBotMcpConfigs,
+  getMcpServer,
 } from '../services/dynamo.js';
 import { getProviderApiKey, getProxyRules } from '../services/secrets.js';
 import { getCachedBot } from '../services/cached-lookups.js';
@@ -373,6 +381,9 @@ async function dispatchMessage(
     const skillPrefixes = await resolveSkillPrefixes(bot);
     if (skillPrefixes.length > 0) invocationPayload.skills = skillPrefixes;
 
+    const mcpConfigs = await resolveMcpConfigs(bot);
+    if (mcpConfigs.length > 0) invocationPayload.mcpConfigs = mcpConfigs;
+
     logger.info(
       { botId: payload.botId, groupJid: payload.groupJid, proxyRuleCount: proxyRules.length },
       'Invoking agent',
@@ -548,6 +559,9 @@ async function dispatchTask(
   const taskSkillPrefixes = await resolveSkillPrefixes(bot);
   if (taskSkillPrefixes.length > 0) invocationPayload.skills = taskSkillPrefixes;
 
+  const taskMcpConfigs = await resolveMcpConfigs(bot);
+  if (taskMcpConfigs.length > 0) invocationPayload.mcpConfigs = taskMcpConfigs;
+
   const result = await invokeAgent(invocationPayload, logger);
 
   if (result.status === 'success' && result.result) {
@@ -607,6 +621,72 @@ async function resolveSkillPrefixes(bot: Bot): Promise<string[]> {
   return resolved
     .filter((s) => s?.status === 'active')
     .flatMap((s) => s!.s3Prefixes);
+}
+
+// ── MCP Config Resolution ───────────────────────────────────────────────────
+
+const secretsManager = new SecretsManagerClient({ region: config.region });
+
+async function resolveMcpConfigs(bot: Bot): Promise<ResolvedMcpConfig[]> {
+  if (!bot.mcpServers?.length) return [];
+
+  const botMcpConfigs = await listBotMcpConfigs(bot.botId);
+  const enabledConfigs = botMcpConfigs.filter((c) => c.enabled);
+  if (enabledConfigs.length === 0) return [];
+
+  const resolved: ResolvedMcpConfig[] = [];
+
+  for (const cfg of enabledConfigs) {
+    let serverDef: {
+      name: string; type: 'stdio' | 'sse' | 'http';
+      command?: string; args?: string[]; npmPackages?: string[];
+      url?: string; headers?: Record<string, string>;
+      envVars?: McpEnvVar[];
+    };
+
+    if (cfg.source === 'platform') {
+      const platformServer = await getMcpServer(cfg.mcpServerId);
+      if (!platformServer || platformServer.status !== 'active') continue;
+      serverDef = platformServer;
+    } else {
+      if (!cfg.customConfig) continue;
+      serverDef = cfg.customConfig;
+    }
+
+    // Resolve env var templates: secretRefs → Secrets Manager values
+    const resolvedEnvVars: Record<string, string> = {};
+    if (serverDef.envVars) {
+      for (const ev of serverDef.envVars) {
+        const secretRef = cfg.secretRefs?.[ev.name];
+        if (secretRef) {
+          try {
+            const secret = await secretsManager.send(
+              new GetSecretValueCommand({ SecretId: secretRef }),
+            );
+            resolvedEnvVars[ev.name] = secret.SecretString || '';
+          } catch {
+            // Skip if secret not found — env var will be empty
+          }
+        } else if (ev.template && !ev.template.startsWith('${secret:')) {
+          resolvedEnvVars[ev.name] = ev.template;
+        }
+      }
+    }
+
+    resolved.push({
+      mcpServerId: cfg.mcpServerId,
+      name: serverDef.name.toLowerCase().replace(/[^a-z0-9_-]/g, '_'),
+      type: serverDef.type,
+      ...(serverDef.command && { command: serverDef.command }),
+      ...(serverDef.args && { args: serverDef.args }),
+      ...(serverDef.npmPackages && { npmPackages: serverDef.npmPackages }),
+      ...(serverDef.url && { url: serverDef.url }),
+      ...(serverDef.headers && { headers: serverDef.headers }),
+      ...(Object.keys(resolvedEnvVars).length > 0 && { envVars: resolvedEnvVars }),
+    });
+  }
+
+  return resolved;
 }
 
 // ── Agent Invocation (AgentCore Runtime via AWS SDK) ─────────────────────────
