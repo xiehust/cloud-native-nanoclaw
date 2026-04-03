@@ -73,9 +73,10 @@ RUN npm install -g @anthropic-ai/claude-code@2.1.91 agent-browser \
 # App setup
 WORKDIR /app
 
-# Copy built artifacts and hoisted node_modules
+# Copy built artifacts and node_modules (hoisted + workspace-nested)
 COPY --from=builder /app/agent-runtime/dist/ ./dist/
 COPY --from=builder /app/node_modules/ ./node_modules/
+COPY --from=builder /app/agent-runtime/node_modules/ ./node_modules/
 COPY --from=builder /app/shared/dist/ ./node_modules/@clawbot/shared/dist/
 COPY --from=builder /app/shared/package.json ./node_modules/@clawbot/shared/
 COPY --from=builder /app/agent-runtime/package.json ./
