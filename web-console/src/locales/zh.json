@@ -81,6 +81,7 @@
       "files": "文件",
       "tools": "工具",
       "skills": "技能",
+      "mcp": "MCP",
       "settings": "设置"
     },
     "overview": {
@@ -184,6 +185,23 @@
       "saving": "保存中...",
       "saved": "技能已更新",
       "error": "更新技能失败"
+    },
+    "mcp": {
+      "title": "MCP 服务",
+      "description": "管理此机器人的 Model Context Protocol 服务。启用平台服务或添加自定义服务。",
+      "platformServers": "平台 MCP 服务",
+      "noPlatformServers": "暂无平台 MCP 服务。请联系管理员添加。",
+      "customServers": "自定义 MCP 服务",
+      "addCustom": "添加自定义 MCP 服务",
+      "noCustomServers": "暂无自定义 MCP 服务。使用上方按钮添加。",
+      "secrets": "密钥",
+      "secretsDesc": "此 MCP 服务所需的凭证",
+      "secretPlaceholder": "输入值...",
+      "save": "保存",
+      "saving": "保存中...",
+      "saved": "已保存！",
+      "error": "保存失败",
+      "deleteConfirm": "删除自定义 MCP 服务 \"{{name}}\"？"
     },
     "settings": {
       "triggerPattern": "触发模式",

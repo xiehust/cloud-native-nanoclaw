@@ -183,6 +183,18 @@ export const bots = {
   listSkills: (botId: string) => request<{ skills: BotSkillEntry[] }>(`/bots/${botId}/skills`),
   updateSkills: (botId: string, skills: string[]) =>
     request<{ ok: boolean }>(`/bots/${botId}/skills`, { method: 'PUT', body: JSON.stringify({ skills }) }),
+  listMcpServers: (botId: string) =>
+    request<{ mcpServers: BotMcpServerEntry[] }>(`/bots/${botId}/mcp-servers`),
+  updateMcpServers: (botId: string, mcpServers: string[]) =>
+    request<{ ok: boolean }>(`/bots/${botId}/mcp-servers`, { method: 'PUT', body: JSON.stringify({ mcpServers }) }),
+  addCustomMcpServer: (botId: string, data: Record<string, unknown>) =>
+    request<BotMcpServerEntry>(`/bots/${botId}/mcp-servers/custom`, { method: 'POST', body: JSON.stringify(data) }),
+  updateCustomMcpServer: (botId: string, mcpServerId: string, data: Record<string, unknown>) =>
+    request<BotMcpServerEntry>(`/bots/${botId}/mcp-servers/custom/${mcpServerId}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteCustomMcpServer: (botId: string, mcpServerId: string) =>
+    request<void>(`/bots/${botId}/mcp-servers/custom/${mcpServerId}`, { method: 'DELETE' }),
+  saveMcpSecrets: (botId: string, mcpServerId: string, secrets: Record<string, string>) =>
+    request<{ ok: boolean }>(`/bots/${botId}/mcp-servers/${mcpServerId}/secrets`, { method: 'PUT', body: JSON.stringify({ secrets }) }),
 };
 
 // Channel API
@@ -351,6 +363,18 @@ export interface Skill {
 
 export interface BotSkillEntry extends Skill {
   enabled: boolean;
+}
+
+export interface BotMcpServerEntry {
+  mcpServerId: string;
+  name: string;
+  type: 'stdio' | 'sse' | 'http';
+  description: string;
+  version: string;
+  tools?: McpToolDef[];
+  envVars?: McpEnvVar[];
+  enabled: boolean;
+  source: 'platform' | 'custom';
 }
 
 // File Browser types

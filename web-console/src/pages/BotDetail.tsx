@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import {
   LayoutDashboard, Radio, MessageSquare, Clock, Brain,
   FolderOpen, Settings as SettingsIcon, Plus, Trash2, ExternalLink,
-  Play, Pause, Save, AlertTriangle, Shield, Zap,
+  Play, Pause, Save, AlertTriangle, Shield, Zap, Server, ChevronDown, ChevronRight,
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import TabNav from '../components/TabNav';
@@ -18,6 +18,7 @@ import {
   type ProviderPublic,
   type AvailableTools, type ToolWhitelistConfig,
   type BotSkillEntry,
+  type BotMcpServerEntry,
 } from '../lib/api';
 
 /* ── Tab icon map (labels are i18n'd inside BotDetail) ─────────────── */
@@ -31,6 +32,7 @@ const tabIcons: Record<string, React.ReactNode> = {
   files: <FolderOpen size={16} />,
   tools: <Shield size={16} />,
   skills: <Zap size={16} />,
+  mcp: <Server size={16} />,
   settings: <SettingsIcon size={16} />,
 };
 
@@ -1046,6 +1048,412 @@ function BotSkillsTab({ bot, botId, loadData }: { bot: Bot; botId: string; loadD
   );
 }
 
+/* ── MCP tab ──────────────────────────────────────────────────────── */
+
+function BotMcpTab({ bot, botId, loadData }: { bot: Bot; botId: string; loadData: () => void }) {
+  const { t } = useTranslation();
+
+  // Platform MCP servers
+  const [platformServers, setPlatformServers] = useState<BotMcpServerEntry[]>([]);
+  const [selectedPlatform, setSelectedPlatform] = useState<Set<string>>(new Set());
+  const [loading, setLoading] = useState(true);
+
+  // Secrets for platform servers (mcpServerId -> {envVarName: value})
+  const [secrets, setSecrets] = useState<Record<string, Record<string, string>>>({});
+  const [expandedSecrets, setExpandedSecrets] = useState<Set<string>>(new Set());
+
+  // Custom servers
+  const [customServers, setCustomServers] = useState<BotMcpServerEntry[]>([]);
+  const [showAddCustom, setShowAddCustom] = useState(false);
+
+  // Custom server form state
+  const [customType, setCustomType] = useState<'stdio' | 'sse' | 'http'>('stdio');
+  const [customName, setCustomName] = useState('');
+  const [customDesc, setCustomDesc] = useState('');
+  const [customVersion, setCustomVersion] = useState('1.0.0');
+  const [customCommand, setCustomCommand] = useState('');
+  const [customArgs, setCustomArgs] = useState('');
+  const [customNpmPackages, setCustomNpmPackages] = useState('');
+  const [customUrl, setCustomUrl] = useState('');
+
+  // Shared
+  const [saving, setSaving] = useState(false);
+  const [status, setStatus] = useState<'saved' | 'error' | null>(null);
+
+  // Load data
+  useEffect(() => {
+    setLoading(true);
+    botsApi.listMcpServers(botId).then((res) => {
+      const platform = res.mcpServers.filter(s => s.source === 'platform');
+      const custom = res.mcpServers.filter(s => s.source === 'custom');
+      setPlatformServers(platform);
+      setSelectedPlatform(new Set(platform.filter(s => s.enabled).map(s => s.mcpServerId)));
+      setCustomServers(custom);
+    }).catch(console.error).finally(() => setLoading(false));
+  }, [botId]);
+
+  function togglePlatformServer(mcpServerId: string) {
+    setStatus(null);
+    setSelectedPlatform((prev) => {
+      const next = new Set(prev);
+      if (next.has(mcpServerId)) next.delete(mcpServerId);
+      else next.add(mcpServerId);
+      return next;
+    });
+  }
+
+  function toggleSecrets(mcpServerId: string) {
+    setExpandedSecrets((prev) => {
+      const next = new Set(prev);
+      if (next.has(mcpServerId)) next.delete(mcpServerId);
+      else next.add(mcpServerId);
+      return next;
+    });
+  }
+
+  function setSecretValue(mcpServerId: string, envVarName: string, value: string) {
+    setSecrets(prev => ({
+      ...prev,
+      [mcpServerId]: { ...(prev[mcpServerId] || {}), [envVarName]: value },
+    }));
+  }
+
+  function resetCustomForm() {
+    setCustomType('stdio');
+    setCustomName('');
+    setCustomDesc('');
+    setCustomVersion('1.0.0');
+    setCustomCommand('');
+    setCustomArgs('');
+    setCustomNpmPackages('');
+    setCustomUrl('');
+    setShowAddCustom(false);
+  }
+
+  async function handleAddCustom() {
+    if (!customName.trim()) return;
+    setSaving(true);
+    try {
+      const data: Record<string, unknown> = {
+        name: customName.trim(),
+        type: customType,
+        description: customDesc.trim(),
+        version: customVersion.trim() || '1.0.0',
+      };
+      if (customType === 'stdio') {
+        data.command = customCommand.trim();
+        if (customArgs.trim()) data.args = customArgs.split(',').map(a => a.trim()).filter(Boolean);
+        if (customNpmPackages.trim()) data.npmPackages = customNpmPackages.split(',').map(p => p.trim()).filter(Boolean);
+      } else {
+        data.url = customUrl.trim();
+      }
+      const newServer = await botsApi.addCustomMcpServer(botId, data);
+      setCustomServers(prev => [...prev, newServer]);
+      resetCustomForm();
+    } catch {
+      setStatus('error');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleDeleteCustom(server: BotMcpServerEntry) {
+    if (!confirm(t('botDetail.mcp.deleteConfirm', { name: server.name }))) return;
+    try {
+      await botsApi.deleteCustomMcpServer(botId, server.mcpServerId);
+      setCustomServers(prev => prev.filter(s => s.mcpServerId !== server.mcpServerId));
+    } catch {
+      setStatus('error');
+    }
+  }
+
+  async function handleSave() {
+    setSaving(true);
+    setStatus(null);
+    try {
+      // Save platform selection
+      await botsApi.updateMcpServers(botId, Array.from(selectedPlatform));
+
+      // Save secrets for servers that have them
+      const secretPromises = Object.entries(secrets)
+        .filter(([, vals]) => Object.values(vals).some(v => v.trim()))
+        .map(([mcpServerId, vals]) => botsApi.saveMcpSecrets(botId, mcpServerId, vals));
+      if (secretPromises.length > 0) await Promise.all(secretPromises);
+
+      setStatus('saved');
+      setTimeout(() => setStatus(null), 3000);
+      loadData();
+    } catch {
+      setStatus('error');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (loading) return <div className="text-center py-12 text-slate-400">{t('common.loading')}</div>;
+
+  return (
+    <div className="space-y-6">
+      {/* Header + Save */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-lg font-semibold text-slate-900">{t('botDetail.mcp.title')}</h2>
+          <p className="text-sm text-slate-500">{t('botDetail.mcp.description')}</p>
+        </div>
+        <div className="flex items-center gap-3">
+          {status === 'saved' && <span className="text-sm text-emerald-600 font-medium">{t('botDetail.mcp.saved')}</span>}
+          {status === 'error' && <span className="text-sm text-red-600 font-medium">{t('botDetail.mcp.error')}</span>}
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            className={clsx(
+              'inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-white transition-colors',
+              saving ? 'bg-accent-400 cursor-not-allowed' : 'bg-accent-600 hover:bg-accent-700',
+            )}
+          >
+            <Save size={16} />
+            {saving ? t('botDetail.mcp.saving') : t('botDetail.mcp.save')}
+          </button>
+        </div>
+      </div>
+
+      {/* Section 1: Platform MCP Servers */}
+      <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
+        <h3 className="text-sm font-semibold text-slate-900 mb-3">{t('botDetail.mcp.platformServers')}</h3>
+        {platformServers.length === 0 ? (
+          <p className="text-sm text-slate-400">{t('botDetail.mcp.noPlatformServers')}</p>
+        ) : (
+          <div className="divide-y divide-slate-100 -mx-5">
+            {platformServers.map((server) => {
+              const hasEnvVars = server.envVars && server.envVars.length > 0;
+              const isEnabled = selectedPlatform.has(server.mcpServerId);
+              const isExpanded = expandedSecrets.has(server.mcpServerId);
+
+              return (
+                <div key={server.mcpServerId} className="px-5 py-3">
+                  <label className="flex items-center gap-4 hover:bg-slate-50 cursor-pointer transition-colors -mx-5 px-5 py-1">
+                    <input
+                      type="checkbox"
+                      checked={isEnabled}
+                      onChange={() => togglePlatformServer(server.mcpServerId)}
+                      className="h-4 w-4 rounded border-slate-300 text-accent-600 focus:ring-accent-500"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium text-slate-900">{server.name}</span>
+                        <Badge variant={server.type === 'stdio' ? 'info' : server.type === 'sse' ? 'success' : 'neutral'}>
+                          {server.type.toUpperCase()}
+                        </Badge>
+                        {server.tools && server.tools.length > 0 && (
+                          <span className="text-xs text-slate-400">{server.tools.length} tools</span>
+                        )}
+                        <span className="text-xs text-slate-400">v{server.version}</span>
+                      </div>
+                      {server.description && (
+                        <p className="text-xs text-slate-500 mt-0.5 line-clamp-1">{server.description}</p>
+                      )}
+                    </div>
+                    {hasEnvVars && isEnabled && (
+                      <button
+                        type="button"
+                        onClick={(e) => { e.preventDefault(); e.stopPropagation(); toggleSecrets(server.mcpServerId); }}
+                        className="text-xs text-accent-600 hover:text-accent-700 flex items-center gap-1"
+                      >
+                        {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                        {t('botDetail.mcp.secrets')}
+                      </button>
+                    )}
+                  </label>
+
+                  {/* Expandable secrets section */}
+                  {hasEnvVars && isEnabled && isExpanded && (
+                    <div className="ml-8 mt-2 p-3 bg-slate-50 rounded-lg border border-slate-200">
+                      <p className="text-xs text-slate-500 mb-2">{t('botDetail.mcp.secretsDesc')}</p>
+                      <div className="space-y-2">
+                        {server.envVars!.map((envVar) => (
+                          <div key={envVar.name} className="flex items-center gap-3">
+                            <label className="text-xs font-mono text-slate-700 w-40 shrink-0 flex items-center gap-1">
+                              {envVar.name}
+                              {envVar.required && <span className="text-red-500">*</span>}
+                            </label>
+                            <input
+                              type="password"
+                              value={secrets[server.mcpServerId]?.[envVar.name] ?? ''}
+                              onChange={(e) => setSecretValue(server.mcpServerId, envVar.name, e.target.value)}
+                              placeholder={envVar.description || t('botDetail.mcp.secretPlaceholder')}
+                              className="flex-1 rounded-lg border border-slate-300 px-3 py-1.5 text-sm focus:border-accent-500 focus:ring-2 focus:ring-accent-500/20 focus:outline-none"
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Section 2: Custom MCP Servers */}
+      <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-semibold text-slate-900">{t('botDetail.mcp.customServers')}</h3>
+          <button
+            onClick={() => setShowAddCustom(!showAddCustom)}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-accent-50 text-accent-700 px-3 py-1.5 text-sm font-medium hover:bg-accent-100 transition-colors"
+          >
+            <Plus size={14} />
+            {t('botDetail.mcp.addCustom')}
+          </button>
+        </div>
+
+        {/* Add custom form (collapsible) */}
+        {showAddCustom && (
+          <div className="mb-4 p-4 bg-slate-50 rounded-lg border border-slate-200 space-y-3">
+            {/* Type selector */}
+            <div>
+              <label className="block text-xs font-medium text-slate-700 mb-1">{t('admin.mcpServers.type')}</label>
+              <select
+                value={customType}
+                onChange={(e) => setCustomType(e.target.value as 'stdio' | 'sse' | 'http')}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-accent-500 focus:ring-2 focus:ring-accent-500/20 focus:outline-none"
+              >
+                <option value="stdio">STDIO</option>
+                <option value="sse">SSE</option>
+                <option value="http">HTTP</option>
+              </select>
+            </div>
+
+            {/* Name */}
+            <div>
+              <label className="block text-xs font-medium text-slate-700 mb-1">{t('admin.mcpServers.name')}</label>
+              <input
+                value={customName}
+                onChange={(e) => setCustomName(e.target.value)}
+                placeholder="my-mcp-server"
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-accent-500 focus:ring-2 focus:ring-accent-500/20 focus:outline-none"
+              />
+            </div>
+
+            {/* Description */}
+            <div>
+              <label className="block text-xs font-medium text-slate-700 mb-1">{t('admin.mcpServers.description')}</label>
+              <input
+                value={customDesc}
+                onChange={(e) => setCustomDesc(e.target.value)}
+                placeholder="Description..."
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-accent-500 focus:ring-2 focus:ring-accent-500/20 focus:outline-none"
+              />
+            </div>
+
+            {/* Version */}
+            <div>
+              <label className="block text-xs font-medium text-slate-700 mb-1">{t('admin.mcpServers.version')}</label>
+              <input
+                value={customVersion}
+                onChange={(e) => setCustomVersion(e.target.value)}
+                placeholder="1.0.0"
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-accent-500 focus:ring-2 focus:ring-accent-500/20 focus:outline-none"
+              />
+            </div>
+
+            {/* Command / URL fields depending on type */}
+            {customType === 'stdio' ? (
+              <>
+                <div>
+                  <label className="block text-xs font-medium text-slate-700 mb-1">{t('admin.mcpServers.command')}</label>
+                  <input
+                    value={customCommand}
+                    onChange={(e) => setCustomCommand(e.target.value)}
+                    placeholder={t('admin.mcpServers.commandPlaceholder')}
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-accent-500 focus:ring-2 focus:ring-accent-500/20 focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-700 mb-1">{t('admin.mcpServers.args')} (comma-separated)</label>
+                  <input
+                    value={customArgs}
+                    onChange={(e) => setCustomArgs(e.target.value)}
+                    placeholder="-y, @modelcontextprotocol/server-fetch"
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-accent-500 focus:ring-2 focus:ring-accent-500/20 focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-700 mb-1">{t('admin.mcpServers.npmPackages')} (comma-separated)</label>
+                  <input
+                    value={customNpmPackages}
+                    onChange={(e) => setCustomNpmPackages(e.target.value)}
+                    placeholder="@modelcontextprotocol/server-fetch"
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-accent-500 focus:ring-2 focus:ring-accent-500/20 focus:outline-none"
+                  />
+                </div>
+              </>
+            ) : (
+              <div>
+                <label className="block text-xs font-medium text-slate-700 mb-1">{t('admin.mcpServers.url')}</label>
+                <input
+                  value={customUrl}
+                  onChange={(e) => setCustomUrl(e.target.value)}
+                  placeholder={t('admin.mcpServers.urlPlaceholder')}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-accent-500 focus:ring-2 focus:ring-accent-500/20 focus:outline-none"
+                />
+              </div>
+            )}
+
+            {/* Form buttons */}
+            <div className="flex gap-2 pt-1">
+              <button
+                onClick={handleAddCustom}
+                disabled={saving || !customName.trim()}
+                className="rounded-lg bg-accent-500 text-white px-4 py-2 text-sm font-medium hover:bg-accent-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {t('common.create')}
+              </button>
+              <button
+                onClick={resetCustomForm}
+                className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors"
+              >
+                {t('common.cancel')}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Custom server list */}
+        {customServers.length === 0 && !showAddCustom ? (
+          <p className="text-sm text-slate-400">{t('botDetail.mcp.noCustomServers')}</p>
+        ) : (
+          <div className="divide-y divide-slate-100 -mx-5">
+            {customServers.map((server) => (
+              <div key={server.mcpServerId} className="flex items-center gap-4 px-5 py-3 hover:bg-slate-50 transition-colors">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium text-slate-900">{server.name}</span>
+                    <Badge variant={server.type === 'stdio' ? 'info' : server.type === 'sse' ? 'success' : 'neutral'}>
+                      {server.type.toUpperCase()}
+                    </Badge>
+                    <span className="text-xs text-slate-400">v{server.version}</span>
+                  </div>
+                  {server.description && (
+                    <p className="text-xs text-slate-500 mt-0.5 line-clamp-1">{server.description}</p>
+                  )}
+                </div>
+                <button
+                  onClick={() => handleDeleteCustom(server)}
+                  className="text-slate-400 hover:text-red-500 transition-colors"
+                >
+                  <Trash2 size={16} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 /* ── Main component ────────────────────────────────────────────────── */
 
 export default function BotDetail() {
@@ -1200,6 +1608,9 @@ export default function BotDetail() {
         )}
         {activeTab === 'skills' && (
           <BotSkillsTab bot={bot} botId={botId!} loadData={loadData} />
+        )}
+        {activeTab === 'mcp' && (
+          <BotMcpTab bot={bot} botId={botId!} loadData={loadData} />
         )}
         {activeTab === 'settings' && (
           <SettingsTab bot={bot} botId={botId!} loadData={loadData} />

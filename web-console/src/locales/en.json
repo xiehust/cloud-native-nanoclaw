@@ -81,6 +81,7 @@
       "files": "Files",
       "tools": "Tools",
       "skills": "Skills",
+      "mcp": "MCP",
       "settings": "Settings"
     },
     "overview": {
@@ -184,6 +185,23 @@
       "saving": "Saving...",
       "saved": "Skills updated",
       "error": "Failed to update skills"
+    },
+    "mcp": {
+      "title": "MCP Servers",
+      "description": "Manage Model Context Protocol servers for this bot. Enable platform servers or add custom ones.",
+      "platformServers": "Platform MCP Servers",
+      "noPlatformServers": "No platform MCP servers available. Ask your administrator to add some.",
+      "customServers": "Custom MCP Servers",
+      "addCustom": "Add Custom MCP Server",
+      "noCustomServers": "No custom MCP servers. Add one using the button above.",
+      "secrets": "Secrets",
+      "secretsDesc": "Required credentials for this MCP server",
+      "secretPlaceholder": "Enter value...",
+      "save": "Save",
+      "saving": "Saving...",
+      "saved": "Saved!",
+      "error": "Failed to save",
+      "deleteConfirm": "Delete custom MCP server \"{{name}}\"?"
     },
     "settings": {
       "triggerPattern": "Trigger Pattern",
