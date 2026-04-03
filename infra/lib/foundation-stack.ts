@@ -26,6 +26,8 @@ export class FoundationStack extends cdk.Stack {
   public readonly sessionsTable: dynamodb.Table;
   public readonly providersTable: dynamodb.Table;
   public readonly skillsTable: dynamodb.Table;
+  public readonly mcpServersTable: dynamodb.Table;
+  public readonly botMcpConfigsTable: dynamodb.Table;
 
   constructor(scope: Construct, id: string, props: FoundationStackProps) {
     super(scope, id, props);
@@ -195,6 +197,21 @@ export class FoundationStack extends cdk.Stack {
       ...tableDefaults,
       tableName: `nanoclawbot-${stage}-skills`,
       partitionKey: { name: 'skillId', type: dynamodb.AttributeType.STRING },
+    });
+
+    // 10. MCP Servers table (global platform-level, admin-managed)
+    this.mcpServersTable = new dynamodb.Table(this, 'McpServersTable', {
+      ...tableDefaults,
+      tableName: `nanoclawbot-${stage}-mcp-servers`,
+      partitionKey: { name: 'mcpServerId', type: dynamodb.AttributeType.STRING },
+    });
+
+    // 11. Bot MCP Configs table (per-bot MCP enablement + custom definitions)
+    this.botMcpConfigsTable = new dynamodb.Table(this, 'BotMcpConfigsTable', {
+      ...tableDefaults,
+      tableName: `nanoclawbot-${stage}-bot-mcp-configs`,
+      partitionKey: { name: 'botId', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'mcpServerId', type: dynamodb.AttributeType.STRING },
     });
 
     // ── Stack Outputs (used by deploy.sh) ──────────────────────────────

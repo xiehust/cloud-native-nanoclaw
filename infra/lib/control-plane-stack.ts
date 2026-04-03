@@ -32,6 +32,8 @@ export interface ControlPlaneStackProps extends cdk.StackProps {
     sessions: dynamodb.ITable;
     providers: dynamodb.ITable;
     skills: dynamodb.ITable;
+    mcpServers: dynamodb.ITable;
+    botMcpConfigs: dynamodb.ITable;
   };
   userPool: cognito.IUserPool;
   userPoolClient: cognito.IUserPoolClient;
@@ -146,6 +148,8 @@ export class ControlPlaneStack extends cdk.Stack {
         SESSIONS_TABLE: tables.sessions.tableName,
         PROVIDERS_TABLE: tables.providers.tableName,
         SKILLS_TABLE: tables.skills.tableName,
+        MCP_SERVERS_TABLE: tables.mcpServers.tableName,
+        BOT_MCP_CONFIGS_TABLE: tables.botMcpConfigs.tableName,
         MESSAGE_QUEUE_URL: messageQueue.queueUrl,
         REPLY_QUEUE_URL: replyQueue.queueUrl,
         DATA_BUCKET: dataBucket.bucketName,

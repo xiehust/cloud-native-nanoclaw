@@ -64,6 +64,8 @@ const controlPlane = new ControlPlaneStack(app, `NanoClawBot-${stage}-ControlPla
     sessions: foundation.sessionsTable,
     providers: foundation.providersTable,
     skills: foundation.skillsTable,
+    mcpServers: foundation.mcpServersTable,
+    botMcpConfigs: foundation.botMcpConfigsTable,
   },
   userPool: auth.userPool,
   userPoolClient: auth.userPoolClient,
