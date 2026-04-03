@@ -18,6 +18,7 @@
  *   - Session resumption via sessionId
  */
 
+import { execSync } from 'node:child_process';
 import fs, { rmSync, mkdirSync, readdirSync } from 'fs';
 import { writeFile, mkdir } from 'fs/promises';
 import path from 'path';
@@ -30,7 +31,7 @@ import {
   GetSecretValueCommand,
 } from '@aws-sdk/client-secrets-manager';
 import type pino from 'pino';
-import type { InvocationPayload, InvocationResult, Attachment } from '@clawbot/shared';
+import type { InvocationPayload, InvocationResult, Attachment, ResolvedMcpConfig } from '@clawbot/shared';
 import { syncFromS3, syncToS3, clearSessionDirectory, syncMemoryOnlyFromS3, downloadSkills, type SyncPaths } from './session.js';
 import { buildAppendContent } from './system-prompt.js';
 import { getScopedClients } from './scoped-credentials.js';
@@ -41,6 +42,70 @@ import { createToolWhitelistHook } from './tool-whitelist.js';
 const SESSION_BUCKET = process.env.SESSION_BUCKET || '';
 const DEFAULT_MODEL = 'global.anthropic.claude-sonnet-4-6';
 const secretsManager = new SecretsManagerClient({});
+const MCP_PACKAGES_DIR = '/home/node/.mcp-packages';
+
+// ---------------------------------------------------------------------------
+// Dynamic MCP server helpers
+// ---------------------------------------------------------------------------
+
+async function installMcpPackages(
+  configs: ResolvedMcpConfig[],
+  logger: pino.Logger,
+): Promise<void> {
+  const packagesToInstall: string[] = [];
+
+  for (const cfg of configs) {
+    if (cfg.type === 'stdio' && cfg.npmPackages?.length) {
+      for (const pkg of cfg.npmPackages) {
+        const pkgName = pkg.startsWith('@') ? pkg : pkg.split('/').pop()!;
+        const checkPath = path.join(MCP_PACKAGES_DIR, 'node_modules', pkgName);
+        if (!fs.existsSync(checkPath)) {
+          packagesToInstall.push(pkg);
+        }
+      }
+    }
+  }
+
+  if (packagesToInstall.length === 0) return;
+
+  fs.mkdirSync(MCP_PACKAGES_DIR, { recursive: true });
+  logger.info({ packages: packagesToInstall }, 'Installing MCP npm packages');
+
+  try {
+    execSync(
+      `npm install --prefix ${MCP_PACKAGES_DIR} ${packagesToInstall.join(' ')}`,
+      { timeout: 120_000, stdio: 'pipe' },
+    );
+    logger.info('MCP npm packages installed successfully');
+  } catch (err) {
+    logger.error({ err }, 'Failed to install MCP npm packages');
+  }
+}
+
+function buildDynamicMcpServers(
+  configs?: ResolvedMcpConfig[],
+): Record<string, { command?: string; args?: string[]; env?: Record<string, string>; url?: string; headers?: Record<string, string> }> {
+  if (!configs?.length) return {};
+
+  return Object.fromEntries(
+    configs.map((cfg) => [
+      cfg.name,
+      cfg.type === 'stdio'
+        ? {
+            command: cfg.command || 'node',
+            args: cfg.args || [],
+            env: {
+              ...cfg.envVars,
+              PATH: `${MCP_PACKAGES_DIR}/node_modules/.bin:${process.env.PATH}`,
+            },
+          }
+        : {
+            url: cfg.url!,
+            ...(cfg.headers && { headers: cfg.headers }),
+          },
+    ]),
+  );
+}
 
 // Session switch detection — track which bot+group we last served
 let currentSessionKey: string | undefined;
@@ -188,6 +253,11 @@ async function _handleInvocation(
   if (payload.skills?.length) {
     logger.info({ skillCount: payload.skills.length }, 'Downloading enabled skills');
     await downloadSkills(s3, SESSION_BUCKET, payload.skills, logger);
+  }
+
+  // 2d. Install MCP server npm packages
+  if (payload.mcpConfigs?.length) {
+    await installMcpPackages(payload.mcpConfigs, logger);
   }
 
   // 3. Copy bot operating manual to ~/.claude/CLAUDE.md if not present (first run)
@@ -379,6 +449,8 @@ async function runAgentQuery(params: QueryParams): Promise<InvocationResult> {
           'Skill',
           'NotebookEdit',
           'mcp__nanoclawbot__*',
+          // Dynamic MCP server tool wildcards
+          ...(payload.mcpConfigs?.map((cfg) => `mcp__${cfg.name}__*`) ?? []),
         ],
         disallowedTools: [
           'CronCreate',
@@ -412,6 +484,8 @@ async function runAgentQuery(params: QueryParams): Promise<InvocationResult> {
               ...(params.feishuEnv ?? {}),
             },
           },
+          // Dynamic MCP servers from invocation payload
+          ...buildDynamicMcpServers(payload.mcpConfigs),
         },
         hooks: {
           ...((payload.toolWhitelist?.mcpToolsEnabled || payload.toolWhitelist?.skillsEnabled) && {
