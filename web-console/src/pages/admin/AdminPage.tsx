@@ -1,11 +1,11 @@
 import { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Users, CreditCard, Save, Plus, Ban, PlayCircle, Trash2, Zap, Upload, GitBranch, X } from 'lucide-react';
+import { Users, CreditCard, Save, Plus, Ban, PlayCircle, Trash2, Zap, Upload, GitBranch, X, Server } from 'lucide-react';
 import { clsx } from 'clsx';
 import TabNav from '../../components/TabNav';
 import Badge from '../../components/Badge';
-import { admin, AdminUser, PlanQuotasConfig, Skill } from '../../lib/api';
+import { admin, AdminUser, PlanQuotasConfig, Skill, McpServer } from '../../lib/api';
 
 /* ── Quota field keys ────────────────────────────────────────────── */
 
@@ -607,6 +607,374 @@ function SkillsTab() {
   );
 }
 
+/* ── MCP Servers tab ────────────────────────────────────────────── */
+
+function McpServersTab() {
+  const { t } = useTranslation();
+  const [servers, setServers] = useState<McpServer[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showAdd, setShowAdd] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+
+  // Form state
+  const [serverType, setServerType] = useState<'stdio' | 'sse' | 'http'>('stdio');
+  const [name, setName] = useState('');
+  const [description, setDescription] = useState('');
+  const [version, setVersion] = useState('1.0.0');
+  const [command, setCommand] = useState('');
+  const [args, setArgs] = useState<string[]>([]);
+  const [newArg, setNewArg] = useState('');
+  const [npmPackages, setNpmPackages] = useState<string[]>([]);
+  const [newPackage, setNewPackage] = useState('');
+  const [url, setUrl] = useState('');
+  const [headers, setHeaders] = useState<Array<{ key: string; value: string }>>([]);
+  const [envVars, setEnvVars] = useState<Array<{ name: string; description: string; required: boolean; template: string }>>([]);
+  const [tools, setTools] = useState<Array<{ name: string; description: string }>>([]);
+
+  function loadServers() {
+    setLoading(true);
+    admin.listMcpServers()
+      .then((res) => setServers(res.mcpServers))
+      .catch((err) => console.error('Failed to load MCP servers:', err))
+      .finally(() => setLoading(false));
+  }
+
+  useEffect(() => { loadServers(); }, []);
+
+  function formatDate(dateStr?: string): string {
+    if (!dateStr) return '\u2014';
+    const d = new Date(dateStr);
+    return isNaN(d.getTime()) ? '\u2014' : d.toLocaleDateString();
+  }
+
+  function resetForm() {
+    setShowAdd(false);
+    setServerType('stdio');
+    setName(''); setDescription(''); setVersion('1.0.0');
+    setCommand(''); setArgs([]); setNewArg('');
+    setNpmPackages([]); setNewPackage('');
+    setUrl(''); setHeaders([]);
+    setEnvVars([]); setTools([]);
+  }
+
+  async function handleCreate() {
+    if (!name.trim()) return;
+    setSubmitting(true);
+    try {
+      const data: Record<string, unknown> = {
+        name: name.trim(),
+        description: description.trim(),
+        version: version.trim() || '1.0.0',
+        type: serverType,
+      };
+      if (serverType === 'stdio') {
+        data.command = command.trim();
+        if (args.length) data.args = args;
+        if (npmPackages.length) data.npmPackages = npmPackages;
+      } else {
+        data.url = url.trim();
+        if (headers.length) {
+          const h: Record<string, string> = {};
+          headers.forEach((hdr) => { if (hdr.key.trim()) h[hdr.key.trim()] = hdr.value; });
+          if (Object.keys(h).length) data.headers = h;
+        }
+      }
+      if (envVars.length) data.envVars = envVars.filter((ev) => ev.name.trim());
+      if (tools.length) data.tools = tools.filter((tool) => tool.name.trim());
+
+      await admin.createMcpServer(data);
+      resetForm();
+      loadServers();
+    } catch (err) {
+      console.error('Failed to create MCP server:', err);
+      alert(err instanceof Error ? err.message : 'Create failed');
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleToggleStatus(server: McpServer) {
+    const newStatus = server.status === 'active' ? 'disabled' : 'active';
+    try {
+      await admin.updateMcpServer(server.mcpServerId, { status: newStatus });
+      loadServers();
+    } catch (err) {
+      console.error('Failed to update MCP server status:', err);
+    }
+  }
+
+  async function handleDelete(server: McpServer) {
+    if (!window.confirm(t('admin.mcpServers.deleteConfirm', { name: server.name }))) return;
+    try {
+      await admin.deleteMcpServer(server.mcpServerId);
+      loadServers();
+    } catch (err) {
+      console.error('Failed to delete MCP server:', err);
+    }
+  }
+
+  function addArg() {
+    if (!newArg.trim()) return;
+    setArgs([...args, newArg.trim()]);
+    setNewArg('');
+  }
+
+  function addPackage() {
+    if (!newPackage.trim()) return;
+    setNpmPackages([...npmPackages, newPackage.trim()]);
+    setNewPackage('');
+  }
+
+  if (loading) return <div className="text-center py-12 text-slate-400">{t('common.loading')}</div>;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-end">
+        <button
+          onClick={() => setShowAdd(true)}
+          className="inline-flex items-center gap-1.5 rounded-lg bg-accent-500 text-white px-4 py-2 text-sm font-medium hover:bg-accent-600 transition-colors"
+        >
+          <Plus size={16} /> {t('admin.mcpServers.addServer')}
+        </button>
+      </div>
+
+      {showAdd && (
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5 space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="flex gap-2">
+              {(['stdio', 'sse', 'http'] as const).map((tp) => (
+                <button
+                  key={tp}
+                  onClick={() => setServerType(tp)}
+                  className={clsx(
+                    'inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors',
+                    serverType === tp ? 'bg-accent-500 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200',
+                  )}
+                >
+                  {tp.toUpperCase()}
+                </button>
+              ))}
+            </div>
+            <button onClick={resetForm} className="text-slate-400 hover:text-slate-600"><X size={18} /></button>
+          </div>
+
+          <div className="space-y-3">
+            {/* Common fields */}
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">{t('admin.mcpServers.name')}</label>
+              <input type="text" value={name} onChange={(e) => setName(e.target.value)}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-accent-500 focus:ring-2 focus:ring-accent-500/20 focus:outline-none" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">{t('admin.mcpServers.description')}</label>
+              <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={2}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-accent-500 focus:ring-2 focus:ring-accent-500/20 focus:outline-none" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">{t('admin.mcpServers.version')}</label>
+              <input type="text" value={version} onChange={(e) => setVersion(e.target.value)}
+                className="w-48 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-accent-500 focus:ring-2 focus:ring-accent-500/20 focus:outline-none" />
+            </div>
+
+            {/* STDIO fields */}
+            {serverType === 'stdio' && (
+              <>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">{t('admin.mcpServers.command')}</label>
+                  <input type="text" value={command} onChange={(e) => setCommand(e.target.value)} placeholder={t('admin.mcpServers.commandPlaceholder')}
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-accent-500 focus:ring-2 focus:ring-accent-500/20 focus:outline-none" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">{t('admin.mcpServers.args')}</label>
+                  <div className="flex flex-wrap gap-1.5 mb-2">
+                    {args.map((arg, i) => (
+                      <span key={i} className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-700">
+                        {arg}
+                        <button onClick={() => setArgs(args.filter((_, idx) => idx !== i))} className="text-slate-400 hover:text-slate-600"><X size={12} /></button>
+                      </span>
+                    ))}
+                  </div>
+                  <div className="flex gap-2">
+                    <input type="text" value={newArg} onChange={(e) => setNewArg(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addArg(); } }}
+                      className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-accent-500 focus:ring-2 focus:ring-accent-500/20 focus:outline-none" />
+                    <button onClick={addArg}
+                      className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors">
+                      {t('admin.mcpServers.addArg')}
+                    </button>
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">{t('admin.mcpServers.npmPackages')}</label>
+                  <div className="flex flex-wrap gap-1.5 mb-2">
+                    {npmPackages.map((pkg, i) => (
+                      <span key={i} className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-700">
+                        {pkg}
+                        <button onClick={() => setNpmPackages(npmPackages.filter((_, idx) => idx !== i))} className="text-slate-400 hover:text-slate-600"><X size={12} /></button>
+                      </span>
+                    ))}
+                  </div>
+                  <div className="flex gap-2">
+                    <input type="text" value={newPackage} onChange={(e) => setNewPackage(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addPackage(); } }}
+                      className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-accent-500 focus:ring-2 focus:ring-accent-500/20 focus:outline-none" />
+                    <button onClick={addPackage}
+                      className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors">
+                      {t('admin.mcpServers.addPackage')}
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
+
+            {/* SSE / HTTP fields */}
+            {(serverType === 'sse' || serverType === 'http') && (
+              <>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">{t('admin.mcpServers.url')}</label>
+                  <input type="url" value={url} onChange={(e) => setUrl(e.target.value)} placeholder={t('admin.mcpServers.urlPlaceholder')}
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-accent-500 focus:ring-2 focus:ring-accent-500/20 focus:outline-none" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">{t('admin.mcpServers.headers')}</label>
+                  {headers.map((hdr, i) => (
+                    <div key={i} className="flex gap-2 mb-2">
+                      <input type="text" value={hdr.key} placeholder={t('admin.mcpServers.headerKey')}
+                        onChange={(e) => { const h = [...headers]; h[i] = { ...h[i], key: e.target.value }; setHeaders(h); }}
+                        className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-accent-500 focus:ring-2 focus:ring-accent-500/20 focus:outline-none" />
+                      <input type="text" value={hdr.value} placeholder={t('admin.mcpServers.headerValue')}
+                        onChange={(e) => { const h = [...headers]; h[i] = { ...h[i], value: e.target.value }; setHeaders(h); }}
+                        className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-accent-500 focus:ring-2 focus:ring-accent-500/20 focus:outline-none" />
+                      <button onClick={() => setHeaders(headers.filter((_, idx) => idx !== i))}
+                        className="text-slate-400 hover:text-slate-600"><X size={18} /></button>
+                    </div>
+                  ))}
+                  <button onClick={() => setHeaders([...headers, { key: '', value: '' }])}
+                    className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors">
+                    {t('admin.mcpServers.addHeader')}
+                  </button>
+                </div>
+              </>
+            )}
+
+            {/* Environment Variables */}
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">{t('admin.mcpServers.envVars')}</label>
+              {envVars.map((ev, i) => (
+                <div key={i} className="flex gap-2 mb-2 items-start">
+                  <input type="text" value={ev.name} placeholder={t('admin.mcpServers.envVarName')}
+                    onChange={(e) => { const v = [...envVars]; v[i] = { ...v[i], name: e.target.value }; setEnvVars(v); }}
+                    className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-accent-500 focus:ring-2 focus:ring-accent-500/20 focus:outline-none" />
+                  <input type="text" value={ev.description} placeholder={t('admin.mcpServers.envVarDesc')}
+                    onChange={(e) => { const v = [...envVars]; v[i] = { ...v[i], description: e.target.value }; setEnvVars(v); }}
+                    className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-accent-500 focus:ring-2 focus:ring-accent-500/20 focus:outline-none" />
+                  <input type="text" value={ev.template} placeholder={t('admin.mcpServers.envVarTemplate')}
+                    onChange={(e) => { const v = [...envVars]; v[i] = { ...v[i], template: e.target.value }; setEnvVars(v); }}
+                    className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-accent-500 focus:ring-2 focus:ring-accent-500/20 focus:outline-none" />
+                  <label className="inline-flex items-center gap-1 text-sm text-slate-600 whitespace-nowrap pt-2">
+                    <input type="checkbox" checked={ev.required}
+                      onChange={(e) => { const v = [...envVars]; v[i] = { ...v[i], required: e.target.checked }; setEnvVars(v); }}
+                      className="rounded border-slate-300 text-accent-500 focus:ring-accent-500/20" />
+                    {t('admin.mcpServers.envVarRequired')}
+                  </label>
+                  <button onClick={() => setEnvVars(envVars.filter((_, idx) => idx !== i))}
+                    className="text-slate-400 hover:text-slate-600 pt-2"><X size={18} /></button>
+                </div>
+              ))}
+              <button onClick={() => setEnvVars([...envVars, { name: '', description: '', required: false, template: '' }])}
+                className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors">
+                {t('admin.mcpServers.addEnvVar')}
+              </button>
+            </div>
+
+            {/* Tools */}
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">{t('admin.mcpServers.tools')}</label>
+              {tools.map((tool, i) => (
+                <div key={i} className="flex gap-2 mb-2">
+                  <input type="text" value={tool.name} placeholder={t('admin.mcpServers.toolName')}
+                    onChange={(e) => { const tl = [...tools]; tl[i] = { ...tl[i], name: e.target.value }; setTools(tl); }}
+                    className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-accent-500 focus:ring-2 focus:ring-accent-500/20 focus:outline-none" />
+                  <input type="text" value={tool.description} placeholder={t('admin.mcpServers.toolDesc')}
+                    onChange={(e) => { const tl = [...tools]; tl[i] = { ...tl[i], description: e.target.value }; setTools(tl); }}
+                    className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-accent-500 focus:ring-2 focus:ring-accent-500/20 focus:outline-none" />
+                  <button onClick={() => setTools(tools.filter((_, idx) => idx !== i))}
+                    className="text-slate-400 hover:text-slate-600"><X size={18} /></button>
+                </div>
+              ))}
+              <button onClick={() => setTools([...tools, { name: '', description: '' }])}
+                className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors">
+                {t('admin.mcpServers.addTool')}
+              </button>
+            </div>
+
+            <button onClick={handleCreate} disabled={submitting || !name.trim()}
+              className="rounded-lg bg-accent-500 text-white px-4 py-2 text-sm font-medium hover:bg-accent-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+              {submitting ? t('common.creating') : t('common.create')}
+            </button>
+          </div>
+        </div>
+      )}
+
+      <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+        <table className="min-w-full divide-y divide-slate-200">
+          <thead className="bg-slate-50">
+            <tr>
+              <th className="px-6 py-3 text-left text-xs uppercase tracking-wider text-slate-400 font-medium">{t('admin.mcpServers.name')}</th>
+              <th className="px-6 py-3 text-left text-xs uppercase tracking-wider text-slate-400 font-medium">{t('admin.mcpServers.type')}</th>
+              <th className="px-6 py-3 text-left text-xs uppercase tracking-wider text-slate-400 font-medium">{t('admin.mcpServers.tools')}</th>
+              <th className="px-6 py-3 text-left text-xs uppercase tracking-wider text-slate-400 font-medium">{t('admin.mcpServers.status')}</th>
+              <th className="px-6 py-3 text-left text-xs uppercase tracking-wider text-slate-400 font-medium">{t('admin.mcpServers.created')}</th>
+              <th className="px-6 py-3 text-left text-xs uppercase tracking-wider text-slate-400 font-medium">{t('admin.users.actions')}</th>
+            </tr>
+          </thead>
+          <tbody className="bg-white divide-y divide-slate-200">
+            {servers.map((server) => (
+              <tr key={server.mcpServerId} className="hover:bg-slate-50 transition-colors">
+                <td className="px-6 py-4">
+                  <div className="text-sm font-medium text-slate-900">{server.name}</div>
+                  {server.description && (
+                    <div className="text-xs text-slate-500 mt-0.5 line-clamp-1">{server.description}</div>
+                  )}
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap">
+                  <Badge variant={server.type === 'stdio' ? 'neutral' : 'info'}>
+                    {server.type.toUpperCase()}
+                  </Badge>
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-700">
+                  {server.tools?.length ?? 0}
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap">
+                  <button onClick={() => handleToggleStatus(server)} className="cursor-pointer">
+                    <Badge variant={server.status === 'active' ? 'success' : 'warning'}>
+                      {server.status}
+                    </Badge>
+                  </button>
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500">{formatDate(server.createdAt)}</td>
+                <td className="px-6 py-4 whitespace-nowrap">
+                  <button
+                    onClick={() => handleDelete(server)}
+                    className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50 transition-colors"
+                  >
+                    <Trash2 size={14} /> {t('common.delete')}
+                  </button>
+                </td>
+              </tr>
+            ))}
+            {servers.length === 0 && (
+              <tr>
+                <td colSpan={6} className="px-6 py-8 text-center text-slate-500">{t('admin.mcpServers.noServers')}</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 /* ── Main AdminPage ──────────────────────────────────────────────── */
 
 export default function AdminPage() {
@@ -617,6 +985,7 @@ export default function AdminPage() {
     { key: 'users', label: t('admin.tabs.users'), icon: <Users size={16} /> },
     { key: 'plans', label: t('admin.tabs.plans'), icon: <CreditCard size={16} /> },
     { key: 'skills', label: t('admin.tabs.skills'), icon: <Zap size={16} /> },
+    { key: 'mcp-servers', label: t('admin.tabs.mcpServers'), icon: <Server size={16} /> },
   ];
 
   return (
@@ -629,6 +998,7 @@ export default function AdminPage() {
         {activeTab === 'users' && <UsersTab />}
         {activeTab === 'plans' && <PlansTab />}
         {activeTab === 'skills' && <SkillsTab />}
+        {activeTab === 'mcp-servers' && <McpServersTab />}
       </div>
     </div>
   );

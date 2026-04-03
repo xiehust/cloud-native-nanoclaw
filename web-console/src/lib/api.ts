@@ -292,7 +292,46 @@ export const admin = {
   updateSkill: (skillId: string, data: { name?: string; description?: string; status?: string; version?: string }) =>
     request<Skill>(`/admin/skills/${skillId}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteSkill: (skillId: string) => request<void>(`/admin/skills/${skillId}`, { method: 'DELETE' }),
+  // MCP server management
+  listMcpServers: () => request<{ mcpServers: McpServer[] }>('/admin/mcp-servers'),
+  createMcpServer: (data: Record<string, unknown>) =>
+    request<McpServer>('/admin/mcp-servers', { method: 'POST', body: JSON.stringify(data) }),
+  updateMcpServer: (id: string, data: Record<string, unknown>) =>
+    request<McpServer>(`/admin/mcp-servers/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteMcpServer: (id: string) => request<void>(`/admin/mcp-servers/${id}`, { method: 'DELETE' }),
 };
+
+// MCP server types (admin-managed)
+export interface McpEnvVar {
+  name: string;
+  description: string;
+  required: boolean;
+  template: string;
+}
+
+export interface McpToolDef {
+  name: string;
+  description: string;
+}
+
+export interface McpServer {
+  mcpServerId: string;
+  name: string;
+  description: string;
+  version: string;
+  type: 'stdio' | 'sse' | 'http';
+  command?: string;
+  args?: string[];
+  npmPackages?: string[];
+  url?: string;
+  headers?: Record<string, string>;
+  envVars?: McpEnvVar[];
+  tools?: McpToolDef[];
+  status: 'active' | 'disabled';
+  createdAt: string;
+  updatedAt: string;
+  createdBy: string;
+}
 
 // Skill types (admin-managed global skills library)
 export interface Skill {

@@ -488,7 +488,8 @@
     "tabs": {
       "users": "用户",
       "plans": "套餐",
-      "skills": "技能"
+      "skills": "技能",
+      "mcpServers": "MCP 服务"
     },
     "users": {
       "addUser": "添加用户",
@@ -540,6 +541,39 @@
       "subPath": "子目录（可选）",
       "subPathPlaceholder": "例如 skills/my-skill",
       "deleteConfirm": "删除技能 \"{{name}}\"？此操作无法撤销。"
+    },
+    "mcpServers": {
+      "addServer": "添加 MCP 服务",
+      "name": "名称",
+      "description": "描述",
+      "version": "版本",
+      "type": "类型",
+      "tools": "工具",
+      "status": "状态",
+      "created": "创建时间",
+      "noServers": "暂无 MCP 服务。点击上方按钮添加第一个 MCP 服务。",
+      "deleteConfirm": "删除 MCP 服务 \"{{name}}\"？这也会将其从所有机器人中移除。",
+      "command": "命令",
+      "args": "参数",
+      "npmPackages": "NPM 包",
+      "url": "URL",
+      "headers": "请求头",
+      "envVars": "环境变量",
+      "envVarName": "变量名",
+      "envVarDesc": "描述",
+      "envVarRequired": "必需",
+      "envVarTemplate": "模板 / 默认值",
+      "toolName": "工具名称",
+      "toolDesc": "描述",
+      "addEnvVar": "添加变量",
+      "addTool": "添加工具",
+      "addHeader": "添加请求头",
+      "addArg": "添加参数",
+      "addPackage": "添加包",
+      "headerKey": "键",
+      "headerValue": "值",
+      "commandPlaceholder": "例如 npx",
+      "urlPlaceholder": "https://mcp.example.com/sse"
     },
     "userDetail": {
       "userInfo": "用户信息",

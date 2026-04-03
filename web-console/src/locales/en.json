@@ -488,7 +488,8 @@
     "tabs": {
       "users": "Users",
       "plans": "Plans",
-      "skills": "Skills"
+      "skills": "Skills",
+      "mcpServers": "MCP Servers"
     },
     "users": {
       "addUser": "Add User",
@@ -540,6 +541,39 @@
       "subPath": "Subdirectory (optional)",
       "subPathPlaceholder": "e.g. skills/my-skill",
       "deleteConfirm": "Delete skill \"{{name}}\"? This cannot be undone."
+    },
+    "mcpServers": {
+      "addServer": "Add MCP Server",
+      "name": "Name",
+      "description": "Description",
+      "version": "Version",
+      "type": "Type",
+      "tools": "Tools",
+      "status": "Status",
+      "created": "Created",
+      "noServers": "No MCP servers yet. Add your first MCP server using the button above.",
+      "deleteConfirm": "Delete MCP server \"{{name}}\"? This will also remove it from all bots.",
+      "command": "Command",
+      "args": "Arguments",
+      "npmPackages": "NPM Packages",
+      "url": "URL",
+      "headers": "Headers",
+      "envVars": "Environment Variables",
+      "envVarName": "Variable Name",
+      "envVarDesc": "Description",
+      "envVarRequired": "Required",
+      "envVarTemplate": "Template / Default",
+      "toolName": "Tool Name",
+      "toolDesc": "Description",
+      "addEnvVar": "Add Variable",
+      "addTool": "Add Tool",
+      "addHeader": "Add Header",
+      "addArg": "Add Argument",
+      "addPackage": "Add Package",
+      "headerKey": "Key",
+      "headerValue": "Value",
+      "commandPlaceholder": "e.g. npx",
+      "urlPlaceholder": "https://mcp.example.com/sse"
     },
     "userDetail": {
       "userInfo": "User Info",
