@@ -100,6 +100,7 @@ export interface Bot {
   containerConfig?: BotContainerConfig;
   toolWhitelist?: ToolWhitelistConfig;
   skills?: string[]; // Enabled skill IDs from global skills library
+  mcpServers?: string[];
   createdAt: string;
   updatedAt: string;
 }
@@ -284,6 +285,7 @@ export interface InvocationPayload {
   toolWhitelist?: ToolWhitelistConfig;
   /** Enabled skill IDs — agent runtime downloads these to ~/.claude/skills/ */
   skills?: string[];
+  mcpConfigs?: ResolvedMcpConfig[];
 }
 
 /** Proxy rule passed through invocation payload (secrets included). */
@@ -409,6 +411,74 @@ export interface Skill {
   createdAt: string;
   updatedAt: string;
   createdBy: string;     // Admin userId who created this skill
+}
+
+// ── MCP Server Management ──────────────────────────────────────────────
+
+export interface McpEnvVar {
+  name: string;
+  description: string;
+  required: boolean;
+  template: string;
+}
+
+export interface McpToolDef {
+  name: string;
+  description: string;
+}
+
+export interface McpServer {
+  mcpServerId: string;
+  name: string;
+  description: string;
+  version: string;
+  type: 'stdio' | 'sse' | 'http';
+  command?: string;
+  args?: string[];
+  npmPackages?: string[];
+  url?: string;
+  headers?: Record<string, string>;
+  envVars?: McpEnvVar[];
+  tools?: McpToolDef[];
+  status: 'active' | 'disabled';
+  createdAt: string;
+  updatedAt: string;
+  createdBy: string;
+}
+
+export interface BotMcpConfig {
+  botId: string;
+  mcpServerId: string;
+  source: 'platform' | 'custom';
+  enabled: boolean;
+  customConfig?: {
+    name: string;
+    description: string;
+    version: string;
+    type: 'stdio' | 'sse' | 'http';
+    command?: string;
+    args?: string[];
+    npmPackages?: string[];
+    url?: string;
+    headers?: Record<string, string>;
+    envVars?: McpEnvVar[];
+    tools?: McpToolDef[];
+  };
+  secretRefs?: Record<string, string>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ResolvedMcpConfig {
+  mcpServerId: string;
+  name: string;
+  type: 'stdio' | 'sse' | 'http';
+  command?: string;
+  args?: string[];
+  npmPackages?: string[];
+  url?: string;
+  headers?: Record<string, string>;
+  envVars?: Record<string, string>;
 }
 
 export interface UpdateTaskRequest {
