@@ -424,6 +424,15 @@ async function runAgentQuery(params: QueryParams): Promise<InvocationResult> {
     logger.info({ extraDirs }, 'Additional directories discovered');
   }
 
+  // Diagnostic: verify claude-code CLI is accessible and log env
+  try {
+    const cliVersion = execSync('claude --version 2>&1', { timeout: 5000, encoding: 'utf-8' }).trim();
+    logger.info({ cliVersion, model: payload.model || DEFAULT_MODEL, provider: payload.modelProvider, providerType: payload.providerType }, 'Claude CLI check OK');
+  } catch (diagErr) {
+    logger.error({ err: diagErr instanceof Error ? diagErr.message : String(diagErr) }, 'Claude CLI check FAILED');
+  }
+  logger.info({ sdkEnv: Object.fromEntries(Object.entries(sdkEnv).map(([k, v]) => [k, k.includes('KEY') || k.includes('SECRET') ? '***' : v])) }, 'SDK environment');
+
   try {
     for await (const message of query({
       prompt,
@@ -586,7 +595,9 @@ async function runAgentQuery(params: QueryParams): Promise<InvocationResult> {
     }
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : String(err);
-    logger.error({ error: errorMessage, messageCount }, 'Agent query failed');
+    const errorStack = err instanceof Error ? err.stack : undefined;
+    const errorDetails = err && typeof err === 'object' ? Object.getOwnPropertyNames(err).reduce((acc, k) => { acc[k] = (err as Record<string, unknown>)[k]; return acc; }, {} as Record<string, unknown>) : {};
+    logger.error({ error: errorMessage, errorStack, errorDetails, messageCount }, 'Agent query failed');
     return {
       status: 'error',
       result: lastResult,
