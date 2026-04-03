@@ -67,8 +67,8 @@ ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
 
 # Install claude-code and agent-browser globally (CLI tools only).
 # Note: docx is a library, not a CLI — installed via package.json dependencies.
-RUN npm install -g @anthropic-ai/claude-code@2.1.88 agent-browser \
-    && agent-browser install || true
+RUN npm install -g @anthropic-ai/claude-code@2.1.87 agent-browser \
+    && (agent-browser install || true)
 
 # App setup
 WORKDIR /app
