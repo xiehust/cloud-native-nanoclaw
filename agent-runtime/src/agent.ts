@@ -83,11 +83,12 @@ async function installMcpPackages(
     logger.error({ err }, 'Failed to install MCP npm packages');
     // Remove configs whose packages failed to install
     const failedPkgs = new Set(packagesToInstall);
+    const before = configs.length;
     configs.splice(0, configs.length, ...configs.filter((cfg) => {
       if (cfg.type !== 'stdio' || !cfg.npmPackages?.length) return true;
       return !cfg.npmPackages.some((p) => failedPkgs.has(p));
     }));
-    logger.warn({ removedCount: configs.length }, 'Filtered out MCP configs with failed packages');
+    logger.warn({ removedCount: before - configs.length, remaining: configs.length }, 'Filtered out MCP configs with failed packages');
   }
 }
 

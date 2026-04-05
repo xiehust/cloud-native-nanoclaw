@@ -17,6 +17,7 @@ import {
   deleteBotMcpConfigsByServer,
 } from '../../services/dynamo.js';
 import type { McpServer } from '@clawbot/shared/types';
+import { deleteMcpSecrets } from '../../services/secrets.js';
 
 const envVarSchema = z.object({
   name: z.string().min(1),
@@ -142,14 +143,17 @@ export const adminMcpRoutes: FastifyPluginAsync = async (app) => {
       // Cascade: remove all bot-level configs and clean up bot.mcpServers arrays
       const deletedConfigs = await deleteBotMcpConfigsByServer(request.params.mcpServerId);
 
-      // Best-effort: remove mcpServerId from each affected bot's mcpServers array
-      const affectedBotIds = [...new Set(deletedConfigs.map((c) => c.botId))];
-      for (const botId of affectedBotIds) {
+      // Best-effort: clean up bot.mcpServers arrays and Secrets Manager entries
+      for (const cfg of deletedConfigs) {
         try {
-          const bot = await getBotById(botId);
+          const bot = await getBotById(cfg.botId);
           if (bot?.mcpServers) {
             const updated = bot.mcpServers.filter((id) => id !== request.params.mcpServerId);
-            await updateBot(bot.userId, botId, { mcpServers: updated });
+            await updateBot(bot.userId, cfg.botId, { mcpServers: updated });
+          }
+          // Clean up secrets
+          if (cfg.secretRefs) {
+            await deleteMcpSecrets(bot?.userId || '', cfg.botId, cfg.mcpServerId, Object.keys(cfg.secretRefs));
           }
         } catch {
           // Best-effort — don't fail the admin delete

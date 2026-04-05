@@ -22,7 +22,7 @@ import {
   deleteBot,
 } from '../../services/dynamo.js';
 import { botCache } from '../../services/cache.js';
-import { putMcpSecret } from '../../services/secrets.js';
+import { putMcpSecret, deleteMcpSecrets } from '../../services/secrets.js';
 import type { Bot, BotMcpConfig, CreateBotRequest, UpdateBotRequest } from '@clawbot/shared';
 
 const createBotSchema = z.object({
@@ -492,6 +492,11 @@ export const botsRoutes: FastifyPluginAsync = async (app) => {
       }
 
       await deleteBotMcpConfig(request.params.botId, request.params.mcpServerId);
+
+      // Clean up secrets if any
+      if (existing.secretRefs) {
+        await deleteMcpSecrets(request.userId, request.params.botId, request.params.mcpServerId, Object.keys(existing.secretRefs)).catch(() => {});
+      }
 
       // Remove from bot.mcpServers array
       const updated = (bot.mcpServers || []).filter((id) => id !== request.params.mcpServerId);
