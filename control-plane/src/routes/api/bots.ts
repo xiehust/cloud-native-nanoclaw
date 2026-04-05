@@ -21,7 +21,7 @@ import {
   updateBot,
   deleteBot,
 } from '../../services/dynamo.js';
-import { botCache } from '../../services/cache.js';
+// botCache removed — all bot reads go direct to DynamoDB for consistency
 import { putMcpSecret, deleteMcpSecrets } from '../../services/secrets.js';
 import type { Bot, BotMcpConfig, CreateBotRequest, UpdateBotRequest } from '@clawbot/shared';
 
@@ -180,7 +180,7 @@ export const botsRoutes: FastifyPluginAsync = async (app) => {
       }
 
       await updateBot(request.userId, botId, updates);
-      botCache.delete(botId); // Invalidate so dispatcher picks up changes immediately
+
       const updated = await getBot(request.userId, botId);
       return updated;
     },
@@ -245,7 +245,7 @@ export const botsRoutes: FastifyPluginAsync = async (app) => {
       }
 
       await updateBot(request.userId, request.params.botId, { skills });
-      botCache.delete(request.params.botId);
+
       return { ok: true, skills };
     },
   );
@@ -357,7 +357,7 @@ export const botsRoutes: FastifyPluginAsync = async (app) => {
       const finalList = [...mcpServers, ...customIds];
 
       await updateBot(request.userId, request.params.botId, { mcpServers: finalList } as Partial<Bot>);
-      botCache.delete(request.params.botId);
+
       return { ok: true, mcpServers: finalList };
     },
   );
@@ -418,7 +418,7 @@ export const botsRoutes: FastifyPluginAsync = async (app) => {
       await updateBot(request.userId, request.params.botId, {
         mcpServers: [...currentList, mcpServerId],
       } as Partial<Bot>);
-      botCache.delete(request.params.botId);
+
 
       return reply.status(201).send({
         mcpServerId,
@@ -471,7 +471,7 @@ export const botsRoutes: FastifyPluginAsync = async (app) => {
         customConfig: updatedConfig as BotMcpConfig['customConfig'],
         updatedAt: new Date().toISOString(),
       });
-      botCache.delete(request.params.botId);
+
 
       return { mcpServerId: request.params.mcpServerId, ...updatedConfig, enabled: true, source: 'custom' };
     },
@@ -501,7 +501,7 @@ export const botsRoutes: FastifyPluginAsync = async (app) => {
       // Remove from bot.mcpServers array
       const updated = (bot.mcpServers || []).filter((id) => id !== request.params.mcpServerId);
       await updateBot(request.userId, request.params.botId, { mcpServers: updated } as Partial<Bot>);
-      botCache.delete(request.params.botId);
+
 
       return reply.status(204).send();
     },
