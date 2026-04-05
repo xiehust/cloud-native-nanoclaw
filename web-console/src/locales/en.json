@@ -201,7 +201,10 @@
       "saving": "Saving...",
       "saved": "Saved!",
       "error": "Failed to save",
-      "deleteConfirm": "Delete custom MCP server \"{{name}}\"?"
+      "deleteConfirm": "Delete custom MCP server \"{{name}}\"?",
+      "customPatterns": "Custom tool patterns",
+      "customPatternPlaceholder": "e.g. search or mcp__duckduckgo*",
+      "customPatternHint": "Full tool name for exact match, or prefix with * for wildcard (e.g. mcp__myserver__* to allow all tools from myserver)"
     },
     "settings": {
       "triggerPattern": "Trigger Pattern",

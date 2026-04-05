@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import {
   LayoutDashboard, Radio, MessageSquare, Clock, Brain,
   FolderOpen, Settings as SettingsIcon, Plus, Trash2, ExternalLink,
-  Play, Pause, Save, AlertTriangle, Shield, Zap, Server, ChevronDown, ChevronRight, X,
+  Play, Pause, Save, AlertTriangle, Zap, Server, ChevronDown, ChevronRight, X,
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import TabNav from '../components/TabNav';
@@ -16,7 +16,7 @@ import {
   providers as providersApi,
   Bot, ChannelConfig, Group, ScheduledTask,
   type ProviderPublic,
-  type AvailableTools, type ToolWhitelistConfig,
+  type AvailableTools,
   type BotSkillEntry,
   type BotMcpServerEntry,
 } from '../lib/api';
@@ -30,7 +30,6 @@ const tabIcons: Record<string, React.ReactNode> = {
   tasks: <Clock size={16} />,
   memory: <Brain size={16} />,
   files: <FolderOpen size={16} />,
-  tools: <Shield size={16} />,
   skills: <Zap size={16} />,
   mcp: <Server size={16} />,
   settings: <SettingsIcon size={16} />,
@@ -634,113 +633,7 @@ function MemoryTab({ botId }: { botId: string }) {
   );
 }
 
-/* ── Tools tab ────────────────────────────────────────────────────── */
-
-function ToolsTab({
-  bot, botId, loadData,
-}: {
-  bot: Bot;
-  botId: string;
-  loadData: () => void;
-}) {
-  const { t } = useTranslation();
-  const [mcpToolsEnabled, setMcpToolsEnabled] = useState(bot.toolWhitelist?.mcpToolsEnabled ?? false);
-  const [allowedMcpTools, setAllowedMcpTools] = useState<string[]>(bot.toolWhitelist?.allowedMcpTools ?? []);
-  const [catalog, setCatalog] = useState<AvailableTools | null>(null);
-  const [saving, setSaving] = useState(false);
-  const [status, setStatus] = useState<'saved' | 'error' | null>(null);
-
-  useEffect(() => {
-    botsApi.availableTools().then(setCatalog).catch(console.error);
-  }, []);
-
-  useEffect(() => {
-    setMcpToolsEnabled(bot.toolWhitelist?.mcpToolsEnabled ?? false);
-    setAllowedMcpTools(bot.toolWhitelist?.allowedMcpTools ?? []);
-  }, [bot.toolWhitelist]);
-
-  function toggleMcpTool(name: string) {
-    setAllowedMcpTools(prev =>
-      prev.includes(name) ? prev.filter(t => t !== name) : [...prev, name]
-    );
-  }
-
-  async function saveWhitelist() {
-    setSaving(true);
-    setStatus(null);
-    try {
-      const toolWhitelist: ToolWhitelistConfig = {
-        mcpToolsEnabled,
-        skillsEnabled: bot.toolWhitelist?.skillsEnabled ?? false,
-        allowedMcpTools,
-        allowedSkills: bot.toolWhitelist?.allowedSkills ?? [],
-      };
-      await botsApi.update(botId, { toolWhitelist } as Partial<Bot>);
-      setStatus('saved');
-      setTimeout(() => setStatus(null), 3000);
-      loadData();
-    } catch {
-      setStatus('error');
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <div className="space-y-6">
-      {/* Description */}
-      <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
-        <h2 className="text-base font-semibold text-slate-900">{t('botDetail.tools.title')}</h2>
-        <p className="text-sm text-slate-500 mt-1">{t('botDetail.tools.description')}</p>
-      </div>
-
-      {/* MCP Tools — with its own toggle */}
-      <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-sm font-semibold text-slate-900">{t('botDetail.tools.mcpTools')}</h3>
-          <button
-            onClick={() => setMcpToolsEnabled(!mcpToolsEnabled)}
-            className={clsx(
-              'relative inline-flex h-6 w-11 items-center rounded-full transition-colors',
-              mcpToolsEnabled ? 'bg-accent-500' : 'bg-slate-300',
-            )}
-          >
-            <span className={clsx('inline-block h-4 w-4 rounded-full bg-white transition-transform', mcpToolsEnabled ? 'translate-x-6' : 'translate-x-1')} />
-          </button>
-        </div>
-        <p className="text-xs text-slate-400 mb-3">
-          {mcpToolsEnabled ? t('botDetail.tools.mcpToolsEnabled') : t('botDetail.tools.mcpToolsDisabled')}
-        </p>
-        <div className={clsx('grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3', !mcpToolsEnabled && 'opacity-50 pointer-events-none')}>
-          {catalog?.mcpTools.map(tool => (
-            <label key={tool.name} className="flex items-center gap-2 cursor-pointer" title={tool.description}>
-              <input
-                type="checkbox"
-                checked={allowedMcpTools.includes(tool.name)}
-                onChange={() => toggleMcpTool(tool.name)}
-                className="rounded border-slate-300 text-accent-500 focus:ring-accent-500"
-              />
-              <span className="text-sm text-slate-700 font-mono">{tool.name}</span>
-            </label>
-          ))}
-        </div>
-      </div>
-
-      {/* Save button */}
-      <div className="flex items-center gap-3">
-        <button
-          onClick={saveWhitelist}
-          disabled={saving}
-          className="inline-flex items-center gap-1.5 rounded-lg bg-accent-500 text-white px-5 py-2.5 text-sm font-medium hover:bg-accent-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          <Save size={16} /> {saving ? t('botDetail.tools.saving') : t('botDetail.tools.save')}
-        </button>
-        {status === 'saved' && <span className="text-sm text-emerald-600">{t('botDetail.tools.saved')}</span>}
-        {status === 'error' && <span className="text-sm text-red-600">{t('botDetail.tools.error')}</span>}
-      </div>
-    </div>
-  );
-}
+/* ── (ToolsTab removed — MCP tools whitelist moved to BotMcpTab) ──── */
 
 /* ── Settings tab ─────────────────────────────────────────────────── */
 
@@ -1080,6 +973,12 @@ function BotMcpTab({ bot, botId, loadData }: { bot: Bot; botId: string; loadData
   const [customHeaders, setCustomHeaders] = useState<Array<{ key: string; value: string }>>([]);
   const [customEnvVars, setCustomEnvVars] = useState<Array<{ name: string; description: string; required: boolean; template: string }>>([]);
 
+  // MCP tool whitelist (moved from ToolsTab)
+  const [mcpToolsEnabled, setMcpToolsEnabled] = useState(bot.toolWhitelist?.mcpToolsEnabled ?? false);
+  const [allowedMcpTools, setAllowedMcpTools] = useState<string[]>(bot.toolWhitelist?.allowedMcpTools ?? []);
+  const [catalog, setCatalog] = useState<AvailableTools | null>(null);
+  const [customToolPattern, setCustomToolPattern] = useState('');
+
   // Shared
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState<'saved' | 'error' | null>(null);
@@ -1087,14 +986,38 @@ function BotMcpTab({ bot, botId, loadData }: { bot: Bot; botId: string; loadData
   // Load data
   useEffect(() => {
     setLoading(true);
-    botsApi.listMcpServers(botId).then((res) => {
-      const platform = res.mcpServers.filter(s => s.source === 'platform');
-      const custom = res.mcpServers.filter(s => s.source === 'custom');
+    Promise.all([
+      botsApi.listMcpServers(botId),
+      botsApi.availableTools(),
+    ]).then(([mcpRes, catalogRes]) => {
+      const platform = mcpRes.mcpServers.filter(s => s.source === 'platform');
+      const custom = mcpRes.mcpServers.filter(s => s.source === 'custom');
       setPlatformServers(platform);
       setSelectedPlatform(new Set(platform.filter(s => s.enabled).map(s => s.mcpServerId)));
       setCustomServers(custom);
+      setCatalog(catalogRes);
     }).catch(console.error).finally(() => setLoading(false));
   }, [botId]);
+
+  useEffect(() => {
+    setMcpToolsEnabled(bot.toolWhitelist?.mcpToolsEnabled ?? false);
+    setAllowedMcpTools(bot.toolWhitelist?.allowedMcpTools ?? []);
+  }, [bot.toolWhitelist]);
+
+  function toggleMcpTool(name: string) {
+    setAllowedMcpTools(prev =>
+      prev.includes(name) ? prev.filter(t => t !== name) : [...prev, name]
+    );
+  }
+
+  function addCustomPattern() {
+    if (!customToolPattern.trim()) return;
+    const pattern = customToolPattern.trim();
+    if (!allowedMcpTools.includes(pattern)) {
+      setAllowedMcpTools(prev => [...prev, pattern]);
+    }
+    setCustomToolPattern('');
+  }
 
   function togglePlatformServer(mcpServerId: string) {
     setStatus(null);
@@ -1194,8 +1117,18 @@ function BotMcpTab({ bot, botId, loadData }: { bot: Bot; botId: string; loadData
     setSaving(true);
     setStatus(null);
     try {
-      // Save platform selection
-      await botsApi.updateMcpServers(botId, Array.from(selectedPlatform));
+      // Save platform selection + tool whitelist in parallel
+      await Promise.all([
+        botsApi.updateMcpServers(botId, Array.from(selectedPlatform)),
+        botsApi.update(botId, {
+          toolWhitelist: {
+            mcpToolsEnabled,
+            allowedMcpTools,
+            skillsEnabled: bot.toolWhitelist?.skillsEnabled ?? false,
+            allowedSkills: bot.toolWhitelist?.allowedSkills ?? [],
+          },
+        } as Partial<Bot>),
+      ]);
 
       // Save secrets for servers that have them
       const secretPromises = Object.entries(secrets)
@@ -1318,7 +1251,66 @@ function BotMcpTab({ bot, botId, loadData }: { bot: Bot; botId: string; loadData
         )}
       </div>
 
-      {/* Section 2: Custom MCP Servers */}
+      {/* Section 2: MCP Tool Whitelist */}
+      <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-semibold text-slate-900">{t('botDetail.tools.mcpTools')}</h3>
+          <button
+            onClick={() => setMcpToolsEnabled(!mcpToolsEnabled)}
+            className={clsx(
+              'relative inline-flex h-6 w-11 items-center rounded-full transition-colors',
+              mcpToolsEnabled ? 'bg-accent-500' : 'bg-slate-300',
+            )}
+          >
+            <span className={clsx('inline-block h-4 w-4 rounded-full bg-white transition-transform', mcpToolsEnabled ? 'translate-x-6' : 'translate-x-1')} />
+          </button>
+        </div>
+        <p className="text-xs text-slate-400 mb-3">
+          {mcpToolsEnabled ? t('botDetail.tools.mcpToolsEnabled') : t('botDetail.tools.mcpToolsDisabled')}
+        </p>
+        <div className={clsx(!mcpToolsEnabled && 'opacity-50 pointer-events-none')}>
+          {/* Built-in tools (checkbox grid) */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 mb-4">
+            {catalog?.mcpTools.map(tool => (
+              <label key={tool.name} className="flex items-center gap-2 cursor-pointer" title={tool.description}>
+                <input
+                  type="checkbox"
+                  checked={allowedMcpTools.includes(tool.name)}
+                  onChange={() => toggleMcpTool(tool.name)}
+                  className="rounded border-slate-300 text-accent-500 focus:ring-accent-500"
+                />
+                <span className="text-sm text-slate-700 font-mono">{tool.name}</span>
+              </label>
+            ))}
+          </div>
+
+          {/* Custom patterns (tag input) */}
+          <div>
+            <label className="block text-xs font-medium text-slate-500 mb-1.5">{t('botDetail.mcp.customPatterns')}</label>
+            <div className="flex flex-wrap gap-1.5 mb-2">
+              {allowedMcpTools.filter(p => !catalog?.mcpTools.some(t => t.name === p)).map((pattern) => (
+                <span key={pattern} className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-700 font-mono">
+                  {pattern}
+                  <button onClick={() => setAllowedMcpTools(prev => prev.filter(p => p !== pattern))} className="text-slate-400 hover:text-slate-600"><X size={12} /></button>
+                </span>
+              ))}
+            </div>
+            <div className="flex gap-2">
+              <input type="text" value={customToolPattern} onChange={(e) => setCustomToolPattern(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addCustomPattern(); } }}
+                placeholder={t('botDetail.mcp.customPatternPlaceholder')}
+                className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-accent-500 focus:ring-2 focus:ring-accent-500/20 focus:outline-none font-mono" />
+              <button onClick={addCustomPattern}
+                className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors">
+                {t('common.add')}
+              </button>
+            </div>
+            <p className="text-xs text-slate-400 mt-1">{t('botDetail.mcp.customPatternHint')}</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Section 3: Custom MCP Servers */}
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-sm font-semibold text-slate-900">{t('botDetail.mcp.customServers')}</h3>
@@ -1671,9 +1663,6 @@ export default function BotDetail() {
             </div>
             <FileBrowser botId={botId!} />
           </div>
-        )}
-        {activeTab === 'tools' && (
-          <ToolsTab bot={bot} botId={botId!} loadData={loadData} />
         )}
         {activeTab === 'skills' && (
           <BotSkillsTab bot={bot} botId={botId!} loadData={loadData} />

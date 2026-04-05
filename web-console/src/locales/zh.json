@@ -201,7 +201,10 @@
       "saving": "保存中...",
       "saved": "已保存！",
       "error": "保存失败",
-      "deleteConfirm": "删除自定义 MCP 服务 \"{{name}}\"？"
+      "deleteConfirm": "删除自定义 MCP 服务 \"{{name}}\"？",
+      "customPatterns": "自定义工具模式",
+      "customPatternPlaceholder": "例如 search 或 mcp__duckduckgo*",
+      "customPatternHint": "输入完整工具名精确匹配，或使用前缀加 * 通配（例如 mcp__myserver__* 允许该服务器所有工具）"
     },
     "settings": {
       "triggerPattern": "触发模式",

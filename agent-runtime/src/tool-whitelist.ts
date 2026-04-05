@@ -6,6 +6,15 @@ import type { InvocationPayload } from '@clawbot/shared';
 
 const MCP_PREFIX = 'mcp__nanoclawbot__';
 
+/** Check if a tool name matches any allowed pattern (exact match or prefix with trailing *). */
+function matchesPattern(toolName: string, strippedName: string, patterns: string[]): boolean {
+  return patterns.some((pattern) =>
+    pattern.endsWith('*')
+      ? toolName.startsWith(pattern.slice(0, -1))  // prefix match on full tool name (e.g., "mcp__duckduckgo*")
+      : strippedName === pattern,                    // exact match on name without prefix
+  );
+}
+
 export function createToolWhitelistHook(
   payload: InvocationPayload,
   logger: pino.Logger,
@@ -39,10 +48,11 @@ export function createToolWhitelistHook(
       }
     }
 
-    // Check MCP tools — format is "mcp__nanoclawbot__<toolName>"
-    if (whitelist.mcpToolsEnabled && toolName.startsWith(MCP_PREFIX)) {
-      const mcpToolName = toolName.slice(MCP_PREFIX.length);
-      if (!whitelist.allowedMcpTools.includes(mcpToolName)) {
+    // Check MCP tools — format is "mcp__<serverName>__<toolName>"
+    // Supports exact match (stripped name) or prefix match (pattern ending with *)
+    if (whitelist.mcpToolsEnabled && toolName.startsWith('mcp__')) {
+      const mcpToolName = toolName.startsWith(MCP_PREFIX) ? toolName.slice(MCP_PREFIX.length) : toolName;
+      if (!matchesPattern(toolName, mcpToolName, whitelist.allowedMcpTools)) {
         logger.warn({
           event: 'tool_access_denied',
           botId: payload.botId,
