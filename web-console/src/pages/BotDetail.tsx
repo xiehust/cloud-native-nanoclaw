@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import {
   LayoutDashboard, Radio, MessageSquare, Clock, Brain,
   FolderOpen, Settings as SettingsIcon, Plus, Trash2, ExternalLink,
-  Play, Pause, Save, AlertTriangle, Shield, Zap, Server, ChevronDown, ChevronRight,
+  Play, Pause, Save, AlertTriangle, Shield, Zap, Server, ChevronDown, ChevronRight, X,
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import TabNav from '../components/TabNav';
@@ -1066,15 +1066,19 @@ function BotMcpTab({ bot, botId, loadData }: { bot: Bot; botId: string; loadData
   const [customServers, setCustomServers] = useState<BotMcpServerEntry[]>([]);
   const [showAddCustom, setShowAddCustom] = useState(false);
 
-  // Custom server form state
+  // Custom server form state (mirrors admin McpServersTab form)
   const [customType, setCustomType] = useState<'stdio' | 'sse' | 'http'>('stdio');
   const [customName, setCustomName] = useState('');
   const [customDesc, setCustomDesc] = useState('');
   const [customVersion, setCustomVersion] = useState('1.0.0');
   const [customCommand, setCustomCommand] = useState('');
-  const [customArgs, setCustomArgs] = useState('');
-  const [customNpmPackages, setCustomNpmPackages] = useState('');
+  const [customArgs, setCustomArgs] = useState<string[]>([]);
+  const [customNewArg, setCustomNewArg] = useState('');
+  const [customNpmPackages, setCustomNpmPackages] = useState<string[]>([]);
+  const [customNewPackage, setCustomNewPackage] = useState('');
   const [customUrl, setCustomUrl] = useState('');
+  const [customHeaders, setCustomHeaders] = useState<Array<{ key: string; value: string }>>([]);
+  const [customEnvVars, setCustomEnvVars] = useState<Array<{ name: string; description: string; required: boolean; template: string }>>([]);
 
   // Shared
   const [saving, setSaving] = useState(false);
@@ -1124,10 +1128,23 @@ function BotMcpTab({ bot, botId, loadData }: { bot: Bot; botId: string; loadData
     setCustomDesc('');
     setCustomVersion('1.0.0');
     setCustomCommand('');
-    setCustomArgs('');
-    setCustomNpmPackages('');
-    setCustomUrl('');
+    setCustomArgs([]); setCustomNewArg('');
+    setCustomNpmPackages([]); setCustomNewPackage('');
+    setCustomUrl(''); setCustomHeaders([]);
+    setCustomEnvVars([]);
     setShowAddCustom(false);
+  }
+
+  function addCustomArg() {
+    if (!customNewArg.trim()) return;
+    setCustomArgs([...customArgs, customNewArg.trim()]);
+    setCustomNewArg('');
+  }
+
+  function addCustomPackage() {
+    if (!customNewPackage.trim()) return;
+    setCustomNpmPackages([...customNpmPackages, customNewPackage.trim()]);
+    setCustomNewPackage('');
   }
 
   async function handleAddCustom() {
@@ -1142,11 +1159,17 @@ function BotMcpTab({ bot, botId, loadData }: { bot: Bot; botId: string; loadData
       };
       if (customType === 'stdio') {
         data.command = customCommand.trim();
-        if (customArgs.trim()) data.args = customArgs.split(',').map(a => a.trim()).filter(Boolean);
-        if (customNpmPackages.trim()) data.npmPackages = customNpmPackages.split(',').map(p => p.trim()).filter(Boolean);
+        if (customArgs.length) data.args = customArgs;
+        if (customNpmPackages.length) data.npmPackages = customNpmPackages;
       } else {
         data.url = customUrl.trim();
+        if (customHeaders.length) {
+          const h: Record<string, string> = {};
+          customHeaders.forEach((hdr) => { if (hdr.key.trim()) h[hdr.key.trim()] = hdr.value; });
+          if (Object.keys(h).length) data.headers = h;
+        }
       }
+      if (customEnvVars.length) data.envVars = customEnvVars.filter((ev) => ev.name.trim());
       const newServer = await botsApi.addCustomMcpServer(botId, data);
       setCustomServers(prev => [...prev, newServer]);
       resetCustomForm();
@@ -1311,112 +1334,158 @@ function BotMcpTab({ bot, botId, loadData }: { bot: Bot; botId: string; loadData
         {/* Add custom form (collapsible) */}
         {showAddCustom && (
           <div className="mb-4 p-4 bg-slate-50 rounded-lg border border-slate-200 space-y-3">
-            {/* Type selector */}
-            <div>
-              <label className="block text-xs font-medium text-slate-700 mb-1">{t('admin.mcpServers.type')}</label>
-              <select
-                value={customType}
-                onChange={(e) => setCustomType(e.target.value as 'stdio' | 'sse' | 'http')}
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-accent-500 focus:ring-2 focus:ring-accent-500/20 focus:outline-none"
-              >
-                <option value="stdio">STDIO</option>
-                <option value="sse">SSE</option>
-                <option value="http">HTTP</option>
-              </select>
+            {/* Type selector — button group (same as admin) */}
+            <div className="flex items-center justify-between">
+              <div className="flex gap-2">
+                {(['stdio', 'sse', 'http'] as const).map((tp) => (
+                  <button
+                    key={tp}
+                    onClick={() => setCustomType(tp)}
+                    className={clsx(
+                      'inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors',
+                      customType === tp ? 'bg-accent-500 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200',
+                    )}
+                  >
+                    {tp.toUpperCase()}
+                  </button>
+                ))}
+              </div>
+              <button onClick={resetCustomForm} className="text-slate-400 hover:text-slate-600"><X size={18} /></button>
             </div>
 
-            {/* Name */}
+            {/* Common fields */}
             <div>
-              <label className="block text-xs font-medium text-slate-700 mb-1">{t('admin.mcpServers.name')}</label>
-              <input
-                value={customName}
-                onChange={(e) => setCustomName(e.target.value)}
-                placeholder="my-mcp-server"
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-accent-500 focus:ring-2 focus:ring-accent-500/20 focus:outline-none"
-              />
+              <label className="block text-sm font-medium text-slate-700 mb-1">{t('admin.mcpServers.name')}</label>
+              <input type="text" value={customName} onChange={(e) => setCustomName(e.target.value)}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-accent-500 focus:ring-2 focus:ring-accent-500/20 focus:outline-none" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">{t('admin.mcpServers.description')}</label>
+              <textarea value={customDesc} onChange={(e) => setCustomDesc(e.target.value)} rows={2}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-accent-500 focus:ring-2 focus:ring-accent-500/20 focus:outline-none" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">{t('admin.mcpServers.version')}</label>
+              <input type="text" value={customVersion} onChange={(e) => setCustomVersion(e.target.value)}
+                className="w-48 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-accent-500 focus:ring-2 focus:ring-accent-500/20 focus:outline-none" />
             </div>
 
-            {/* Description */}
-            <div>
-              <label className="block text-xs font-medium text-slate-700 mb-1">{t('admin.mcpServers.description')}</label>
-              <input
-                value={customDesc}
-                onChange={(e) => setCustomDesc(e.target.value)}
-                placeholder="Description..."
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-accent-500 focus:ring-2 focus:ring-accent-500/20 focus:outline-none"
-              />
-            </div>
-
-            {/* Version */}
-            <div>
-              <label className="block text-xs font-medium text-slate-700 mb-1">{t('admin.mcpServers.version')}</label>
-              <input
-                value={customVersion}
-                onChange={(e) => setCustomVersion(e.target.value)}
-                placeholder="1.0.0"
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-accent-500 focus:ring-2 focus:ring-accent-500/20 focus:outline-none"
-              />
-            </div>
-
-            {/* Command / URL fields depending on type */}
-            {customType === 'stdio' ? (
+            {/* STDIO fields */}
+            {customType === 'stdio' && (
               <>
                 <div>
-                  <label className="block text-xs font-medium text-slate-700 mb-1">{t('admin.mcpServers.command')}</label>
-                  <input
-                    value={customCommand}
-                    onChange={(e) => setCustomCommand(e.target.value)}
-                    placeholder={t('admin.mcpServers.commandPlaceholder')}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-accent-500 focus:ring-2 focus:ring-accent-500/20 focus:outline-none"
-                  />
+                  <label className="block text-sm font-medium text-slate-700 mb-1">{t('admin.mcpServers.command')}</label>
+                  <input type="text" value={customCommand} onChange={(e) => setCustomCommand(e.target.value)} placeholder={t('admin.mcpServers.commandPlaceholder')}
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-accent-500 focus:ring-2 focus:ring-accent-500/20 focus:outline-none" />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-slate-700 mb-1">{t('admin.mcpServers.args')} (comma-separated)</label>
-                  <input
-                    value={customArgs}
-                    onChange={(e) => setCustomArgs(e.target.value)}
-                    placeholder="-y, @modelcontextprotocol/server-fetch"
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-accent-500 focus:ring-2 focus:ring-accent-500/20 focus:outline-none"
-                  />
+                  <label className="block text-sm font-medium text-slate-700 mb-1">{t('admin.mcpServers.args')}</label>
+                  <div className="flex flex-wrap gap-1.5 mb-2">
+                    {customArgs.map((arg, i) => (
+                      <span key={i} className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-700">
+                        {arg}
+                        <button onClick={() => setCustomArgs(customArgs.filter((_, idx) => idx !== i))} className="text-slate-400 hover:text-slate-600"><X size={12} /></button>
+                      </span>
+                    ))}
+                  </div>
+                  <div className="flex gap-2">
+                    <input type="text" value={customNewArg} onChange={(e) => setCustomNewArg(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addCustomArg(); } }}
+                      className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-accent-500 focus:ring-2 focus:ring-accent-500/20 focus:outline-none" />
+                    <button onClick={addCustomArg}
+                      className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors">
+                      {t('admin.mcpServers.addArg')}
+                    </button>
+                  </div>
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-slate-700 mb-1">{t('admin.mcpServers.npmPackages')} (comma-separated)</label>
-                  <input
-                    value={customNpmPackages}
-                    onChange={(e) => setCustomNpmPackages(e.target.value)}
-                    placeholder="@modelcontextprotocol/server-fetch"
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-accent-500 focus:ring-2 focus:ring-accent-500/20 focus:outline-none"
-                  />
+                  <label className="block text-sm font-medium text-slate-700 mb-1">{t('admin.mcpServers.npmPackages')}</label>
+                  <div className="flex flex-wrap gap-1.5 mb-2">
+                    {customNpmPackages.map((pkg, i) => (
+                      <span key={i} className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-700">
+                        {pkg}
+                        <button onClick={() => setCustomNpmPackages(customNpmPackages.filter((_, idx) => idx !== i))} className="text-slate-400 hover:text-slate-600"><X size={12} /></button>
+                      </span>
+                    ))}
+                  </div>
+                  <div className="flex gap-2">
+                    <input type="text" value={customNewPackage} onChange={(e) => setCustomNewPackage(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addCustomPackage(); } }}
+                      className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-accent-500 focus:ring-2 focus:ring-accent-500/20 focus:outline-none" />
+                    <button onClick={addCustomPackage}
+                      className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors">
+                      {t('admin.mcpServers.addPackage')}
+                    </button>
+                  </div>
                 </div>
               </>
-            ) : (
-              <div>
-                <label className="block text-xs font-medium text-slate-700 mb-1">{t('admin.mcpServers.url')}</label>
-                <input
-                  value={customUrl}
-                  onChange={(e) => setCustomUrl(e.target.value)}
-                  placeholder={t('admin.mcpServers.urlPlaceholder')}
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-accent-500 focus:ring-2 focus:ring-accent-500/20 focus:outline-none"
-                />
-              </div>
             )}
 
-            {/* Form buttons */}
-            <div className="flex gap-2 pt-1">
-              <button
-                onClick={handleAddCustom}
-                disabled={saving || !customName.trim()}
-                className="rounded-lg bg-accent-500 text-white px-4 py-2 text-sm font-medium hover:bg-accent-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {t('common.create')}
-              </button>
-              <button
-                onClick={resetCustomForm}
-                className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors"
-              >
-                {t('common.cancel')}
+            {/* SSE / HTTP fields */}
+            {(customType === 'sse' || customType === 'http') && (
+              <>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">{t('admin.mcpServers.url')}</label>
+                  <input type="url" value={customUrl} onChange={(e) => setCustomUrl(e.target.value)} placeholder={t('admin.mcpServers.urlPlaceholder')}
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-accent-500 focus:ring-2 focus:ring-accent-500/20 focus:outline-none" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">{t('admin.mcpServers.headers')}</label>
+                  {customHeaders.map((hdr, i) => (
+                    <div key={i} className="flex gap-2 mb-2">
+                      <input type="text" value={hdr.key} placeholder={t('admin.mcpServers.headerKey')}
+                        onChange={(e) => { const h = [...customHeaders]; h[i] = { ...h[i], key: e.target.value }; setCustomHeaders(h); }}
+                        className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-accent-500 focus:ring-2 focus:ring-accent-500/20 focus:outline-none" />
+                      <input type="text" value={hdr.value} placeholder={t('admin.mcpServers.headerValue')}
+                        onChange={(e) => { const h = [...customHeaders]; h[i] = { ...h[i], value: e.target.value }; setCustomHeaders(h); }}
+                        className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-accent-500 focus:ring-2 focus:ring-accent-500/20 focus:outline-none" />
+                      <button onClick={() => setCustomHeaders(customHeaders.filter((_, idx) => idx !== i))}
+                        className="text-slate-400 hover:text-slate-600"><X size={18} /></button>
+                    </div>
+                  ))}
+                  <button onClick={() => setCustomHeaders([...customHeaders, { key: '', value: '' }])}
+                    className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors">
+                    {t('admin.mcpServers.addHeader')}
+                  </button>
+                </div>
+              </>
+            )}
+
+            {/* Environment Variables */}
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">{t('admin.mcpServers.envVars')}</label>
+              {customEnvVars.map((ev, i) => (
+                <div key={i} className="flex gap-2 mb-2 items-start">
+                  <input type="text" value={ev.name} placeholder={t('admin.mcpServers.envVarName')}
+                    onChange={(e) => { const v = [...customEnvVars]; v[i] = { ...v[i], name: e.target.value }; setCustomEnvVars(v); }}
+                    className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-accent-500 focus:ring-2 focus:ring-accent-500/20 focus:outline-none" />
+                  <input type="text" value={ev.description} placeholder={t('admin.mcpServers.envVarDesc')}
+                    onChange={(e) => { const v = [...customEnvVars]; v[i] = { ...v[i], description: e.target.value }; setCustomEnvVars(v); }}
+                    className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-accent-500 focus:ring-2 focus:ring-accent-500/20 focus:outline-none" />
+                  <input type="text" value={ev.template} placeholder={t('admin.mcpServers.envVarTemplate')}
+                    onChange={(e) => { const v = [...customEnvVars]; v[i] = { ...v[i], template: e.target.value }; setCustomEnvVars(v); }}
+                    className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-accent-500 focus:ring-2 focus:ring-accent-500/20 focus:outline-none" />
+                  <label className="inline-flex items-center gap-1 text-sm text-slate-600 whitespace-nowrap pt-2">
+                    <input type="checkbox" checked={ev.required}
+                      onChange={(e) => { const v = [...customEnvVars]; v[i] = { ...v[i], required: e.target.checked }; setCustomEnvVars(v); }}
+                      className="rounded border-slate-300 text-accent-500 focus:ring-accent-500/20" />
+                    {t('admin.mcpServers.envVarRequired')}
+                  </label>
+                  <button onClick={() => setCustomEnvVars(customEnvVars.filter((_, idx) => idx !== i))}
+                    className="text-slate-400 hover:text-slate-600 pt-2"><X size={18} /></button>
+                </div>
+              ))}
+              <button onClick={() => setCustomEnvVars([...customEnvVars, { name: '', description: '', required: false, template: '' }])}
+                className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors">
+                {t('admin.mcpServers.addEnvVar')}
               </button>
             </div>
+
+            {/* Create button */}
+            <button onClick={handleAddCustom} disabled={saving || !customName.trim()}
+              className="rounded-lg bg-accent-500 text-white px-4 py-2 text-sm font-medium hover:bg-accent-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+              {saving ? t('common.creating') : t('common.create')}
+            </button>
           </div>
         )}
 
