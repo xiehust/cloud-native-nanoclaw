@@ -110,6 +110,7 @@ function buildDynamicMcpServers(
             },
           }
         : {
+            type: cfg.type as 'sse' | 'http',
             url: cfg.url!,
             ...(cfg.headers && { headers: cfg.headers }),
           },
