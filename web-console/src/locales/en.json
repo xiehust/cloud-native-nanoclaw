@@ -24,7 +24,8 @@
     "userNotFound": "User not found",
     "copy": "Copy",
     "uploading": "Uploading...",
-    "installing": "Installing..."
+    "installing": "Installing...",
+    "add": "Add"
   },
   "sidebar": {
     "dashboard": "Dashboard",

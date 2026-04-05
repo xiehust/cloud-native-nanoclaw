@@ -24,7 +24,8 @@
     "userNotFound": "未找到用户",
     "copy": "复制",
     "uploading": "上传中...",
-    "installing": "安装中..."
+    "installing": "安装中...",
+    "add": "添加"
   },
   "sidebar": {
     "dashboard": "仪表盘",
