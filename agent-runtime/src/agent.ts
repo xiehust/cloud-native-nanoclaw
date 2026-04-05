@@ -426,7 +426,7 @@ async function runAgentQuery(params: QueryParams): Promise<InvocationResult> {
     logger.info({ extraDirs }, 'Additional directories discovered');
   }
 
-  // Diagnostic: log model/provider/env (lightweight, no blocking calls)
+  // Diagnostic: log model/provider/env and MCP configs
   logger.info({
     model: payload.model || DEFAULT_MODEL,
     provider: payload.modelProvider,
@@ -434,6 +434,10 @@ async function runAgentQuery(params: QueryParams): Promise<InvocationResult> {
     bedrockMode: sdkEnv.CLAUDE_CODE_USE_BEDROCK,
     baseUrl: sdkEnv.ANTHROPIC_BASE_URL,
     hasApiKey: !!sdkEnv.ANTHROPIC_API_KEY,
+    mcpConfigCount: payload.mcpConfigs?.length ?? 0,
+    mcpConfigs: payload.mcpConfigs?.map(c => ({ name: c.name, type: c.type })),
+    whitelistEnabled: payload.toolWhitelist?.mcpToolsEnabled,
+    allowedMcpTools: payload.toolWhitelist?.allowedMcpTools,
   }, 'Query config');
 
   try {
